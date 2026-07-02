@@ -31,6 +31,8 @@ UFEED_present(
 A data frame of UFEED present-season features.
 }
 \description{
-Downloads current-year historical weather, recent weather, and forecast weather,
-then computes present-season UFEED features.
+High-level present wrapper. This function keeps the standard UFEED workflow
+hard-coded: download current-season weather plus recent/forecast Open-Meteo
+data, compute all standard weather features, extract soil features, and wrap
+everything into one modeling data frame.
 }

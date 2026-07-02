@@ -1,10 +1,10 @@
 Package: UFEED
 Type: Package
-Title: Unified Feature Engineering for Environmental and Ecophysiological Data
+Title: Universal Feature Extraction from Environmental Data (UFEED)
 Version: 0.1.0
 Authors@R: 
     person("Hongrui", "Wang", email = "hongrui.wang@inrae.fr", role = c("aut", "cre"))
-Description: Downloads weather and soil data and computes environmental feature sets for plant physiology modeling.
+Description: Downloads weather and soil data and computes environmental features for plant physiology modeling.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true

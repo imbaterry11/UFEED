@@ -37,6 +37,7 @@ UFEED_history(
 A data frame of UFEED historical features.
 }
 \description{
-Downloads weather data, attaches soil data, and computes UFEED features
-for completed historical seasons.
+High-level historical wrapper. This function keeps the standard UFEED workflow
+hard-coded: download historical weather, compute all standard weather features,
+extract soil features, and wrap everything into one modeling data frame.
 }

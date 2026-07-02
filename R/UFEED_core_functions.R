@@ -1,6 +1,7 @@
-# UFEED core functions - v5
-# Generated from working V3 with the Google Earth Engine route renamed to ee
-# Date shift bug fixed: use vector-safe Date_shifted logic.
+# UFEED core functions - v9 simplified public API with profile-specific feature defaults
+# Keeps UFEED_history() and UFEED_present() as hard-coded high-level wrappers.
+# Adds five main modular functions: download history weather, download present weather,
+# compute weather features, get soil features, and wrap weather/features/soil data.
 
 # UFEED core functions ---------------------------------------------------------
 # This file defines two main user-facing functions:
@@ -12,6 +13,15 @@
 # - Prefer package::function() calls where possible.
 # - Earth Engine is only required when weather_data_source = "power_ee".
 # - get_open_meteo_soil_daily_data() is included for North America recent/forecast soil fallback.
+
+#' UFEED package imports
+#'
+#' @importFrom chillR stack_hourly_temps Dynamic_Model GDD
+#' @importFrom dormancyR chilling_units modified_utah_model north_carolina_model
+#' @importFrom fruclimadapt GDH_linear
+#'
+#' @keywords internal
+"_PACKAGE"
 
 # -----------------------------------------------------------------------------
 # 0. Constants
@@ -68,6 +78,37 @@ UFEED_MODULES <- c(
   "EWMA_REWMA_features",
   "cumulative_temp_features",
   "season_summary_features"
+)
+
+UFEED_EWMA_REWMA_WINDOWS <- c(2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90)
+
+UFEED_CUMULATIVE_TEMP_ROLLSUM_WINDOWS <- c(3, 7, 14, 30, 60, 90)
+
+UFEED_CUMULATIVE_TEMP_CHILLING_MODELS <- c("CU", "Utah", "NC", "DP")
+
+UFEED_CUMULATIVE_TEMP_GDH_BASES <- c(10, 7, 4, 0)
+
+UFEED_CUMULATIVE_TEMP_GDD_BASES <- c(0, 4, 7, 10)
+
+UFEED_SEASON_MAX_COLS <- c(
+  "T2M_MAX",
+  "Daily_Temp_Fluctuation",
+  "WS2M_MAX",
+  "GWETROOT",
+  "GWETTOP",
+  "TSOIL1",
+  "TSOIL3",
+  "EVPTRNS"
+)
+
+UFEED_SEASON_MIN_COLS <- c(
+  "T2M_MIN",
+  "Daily_Temp_Fluctuation",
+  "GWETROOT",
+  "GWETTOP",
+  "TSOIL1",
+  "TSOIL3",
+  "EVPTRNS"
 )
 
 # -----------------------------------------------------------------------------
@@ -136,6 +177,63 @@ UFEED_validate_modules <- function(included_module) {
   included_module
 }
 
+UFEED_validate_subset <- function(x, allowed, arg_name) {
+  bad <- setdiff(x, allowed)
+  if (length(bad) > 0) {
+    stop(
+      "Unknown value(s) in `", arg_name, "`: ", paste(bad, collapse = ", "),
+      ". Allowed values are: ", paste(allowed, collapse = ", "), ".",
+      call. = FALSE
+    )
+  }
+  x
+}
+
+UFEED_validate_positive_integerish <- function(x, arg_name, allow_empty = FALSE, min_value = 1L) {
+  if (allow_empty && length(x) == 0L) return(as.integer(x))
+
+  if (length(x) == 0L) {
+    stop("`", arg_name, "` must not be empty.", call. = FALSE)
+  }
+
+  x_num <- suppressWarnings(as.numeric(x))
+  if (any(!is.finite(x_num)) || any(x_num != floor(x_num)) || any(x_num < min_value)) {
+    stop(
+      "`", arg_name, "` must contain integer values greater than or equal to ",
+      min_value, ".",
+      call. = FALSE
+    )
+  }
+
+  as.integer(unique(x_num))
+}
+
+UFEED_validate_integerish <- function(x, arg_name, allow_empty = FALSE) {
+  if (allow_empty && length(x) == 0L) return(as.integer(x))
+
+  if (length(x) == 0L) {
+    stop("`", arg_name, "` must not be empty.", call. = FALSE)
+  }
+
+  x_num <- suppressWarnings(as.numeric(x))
+  if (any(!is.finite(x_num)) || any(x_num != floor(x_num))) {
+    stop("`", arg_name, "` must contain finite integer values.", call. = FALSE)
+  }
+
+  as.integer(unique(x_num))
+}
+
+UFEED_temp_base_name <- function(prefix, base) {
+  base_chr <- gsub("\\.", "p", as.character(base))
+  base_chr <- gsub("-", "m", base_chr, fixed = TRUE)
+
+  if (prefix == "GDH" && identical(as.numeric(base), 10)) {
+    return("GDH10")
+  }
+
+  paste0(prefix, "_", base_chr)
+}
+
 UFEED_safe_left_join_features <- function(df, feature_df) {
   if (is.null(feature_df)) return(df)
   join_cols <- intersect(c("Date", "lon", "lat"), names(feature_df))
@@ -159,6 +257,99 @@ UFEED_add_daily_temp_fluctuation <- function(df) {
     df$Daily_Temp_Fluctuation <- df$T2M_MAX - df$T2M_MIN
   }
   df
+}
+
+UFEED_infer_feature_profile <- function(weather_data) {
+  history_only_cols <- c(
+    "ALLSKY_SFC_LW_DWN",
+    "ALLSKY_SFC_PAR_TOT",
+    "CLOUD_AMT"
+  )
+
+  if (any(history_only_cols %in% names(weather_data))) {
+    "history"
+  } else {
+    "present"
+  }
+}
+
+UFEED_default_feature_columns <- function(feature_profile = c("history", "present")) {
+  feature_profile <- match.arg(feature_profile)
+
+  if (feature_profile == "history") {
+    cumsum_cols <- UFEED_CUMSUM_COLS_HISTORY
+    ewma_rewma_cols <- UFEED_EWMA_REWMA_COLS_HISTORY
+  } else {
+    cumsum_cols <- UFEED_CUMSUM_COLS_PRESENT
+    ewma_rewma_cols <- UFEED_EWMA_REWMA_COLS_PRESENT
+  }
+
+  list(
+    cumsum_cols = cumsum_cols,
+    ewma_rewma_cols = ewma_rewma_cols,
+    season_max_cols = UFEED_SEASON_MAX_COLS,
+    season_min_cols = UFEED_SEASON_MIN_COLS
+  )
+}
+
+UFEED_is_default_argument <- function(x) {
+  is.character(x) && length(x) == 1L && identical(x, "default")
+}
+
+UFEED_resolve_feature_columns <- function(
+    cols,
+    default_cols,
+    weather_data_names,
+    arg_name,
+    inform_missing_default = FALSE
+) {
+  if (UFEED_is_default_argument(cols)) {
+    resolved <- intersect(default_cols, weather_data_names)
+    missing_default <- setdiff(default_cols, weather_data_names)
+
+    if (isTRUE(inform_missing_default) && length(missing_default) > 0L) {
+      message(
+        "Default column(s) for `", arg_name,
+        "` not found in `weather_data` and skipped: ",
+        paste(missing_default, collapse = ", "),
+        "."
+      )
+    }
+
+    return(resolved)
+  }
+
+  if (!is.character(cols)) {
+    stop("`", arg_name, "` must be a character vector or \"default\".", call. = FALSE)
+  }
+
+  cols <- unique(cols)
+
+  invalid_default <- setdiff(cols, default_cols)
+  if (length(invalid_default) > 0L) {
+    stop(
+      "Invalid column(s) in `", arg_name, "`: ",
+      paste(invalid_default, collapse = ", "),
+      ". This argument can only contain a subset of the valid UFEED columns for this feature category and profile. Valid values are: ",
+      paste(default_cols, collapse = ", "),
+      ".",
+      call. = FALSE
+    )
+  }
+
+  missing_from_weather <- setdiff(cols, weather_data_names)
+  if (length(missing_from_weather) > 0L) {
+    stop(
+      "Column(s) requested in `", arg_name, "` are valid for this feature category, but are not present in `weather_data`: ",
+      paste(missing_from_weather, collapse = ", "),
+      ". Available columns in `weather_data` are: ",
+      paste(weather_data_names, collapse = ", "),
+      ".",
+      call. = FALSE
+    )
+  }
+
+  cols
 }
 
 # -----------------------------------------------------------------------------
@@ -360,8 +551,9 @@ UFEED_check_ee_ready <- function(
 
 #' Generate historical UFEED features
 #'
-#' Downloads weather data, attaches soil data, and computes UFEED features
-#' for completed historical seasons.
+#' High-level historical wrapper. This function keeps the standard UFEED workflow
+#' hard-coded: download historical weather, compute all standard weather features,
+#' extract soil features, and wrap everything into one modeling data frame.
 #'
 #' @param lon Numeric longitude.
 #' @param lat Numeric latitude.
@@ -403,44 +595,57 @@ UFEED_history <- function(
     )
   }
 
-  coords <- UFEED_normalize_coordinates(lon, lat, pairwise = TRUE)
-  coords$start_year <- UFEED_recycle_year_arg(start_year, nrow(coords), "start_year")
-  coords$end_year <- UFEED_recycle_year_arg(end_year, nrow(coords), "end_year")
-
-  if (any(coords$start_year > coords$end_year)) {
-    stop("`start_year` must be <= `end_year` for every coordinate pair.", call. = FALSE)
-  }
-
-  if (weather_data_source == "power_ee") {
-    ensure_ee_initialized(
-      ee_user = NULL,
-      ask = interactive(),
-      drive = FALSE,
-      gcs = FALSE
-    )
-
-    UFEED_check_ee_ready()
-  }
-
   message("Getting historical weather data...")
-  weather_data <- UFEED_download_weather_for_coordinates(
-    coords = coords,
+  weather_data <- UFEED_download_history_weather(
+    lon = lon,
+    lat = lat,
+    start_year = start_year,
+    end_year = end_year,
     weather_data_source = weather_data_source,
     parameters = UFEED_WEATHER_PARAMETERS_HISTORY,
+    pairwise = TRUE,
     max_retries = 10,
     retry_wait_sec = 2
   )
 
   message("Computing historical UFEED weather features...")
-  UFEED_feature_df <- UFEED_compute_weather_features(
+  weather_features <- UFEED_compute_weather_features(
     weather_data = weather_data,
+    feature_profile = "history",
     included_module = included_module,
     cumsum_cols = UFEED_CUMSUM_COLS_HISTORY,
     ewma_rewma_cols = UFEED_EWMA_REWMA_COLS_HISTORY,
-    start_filter_date = NULL
+    ewma_rewma_windows = UFEED_EWMA_REWMA_WINDOWS,
+    cumulative_temp_rollsum_windows = UFEED_CUMULATIVE_TEMP_ROLLSUM_WINDOWS,
+    cumulative_temp_chilling_models = UFEED_CUMULATIVE_TEMP_CHILLING_MODELS,
+    cumulative_temp_gdh_bases = UFEED_CUMULATIVE_TEMP_GDH_BASES,
+    cumulative_temp_gdd_bases = UFEED_CUMULATIVE_TEMP_GDD_BASES,
+    season_max_cols = UFEED_SEASON_MAX_COLS,
+    season_min_cols = UFEED_SEASON_MIN_COLS,
+    message_progress = TRUE
   )
 
-  coord_filter <- coords |>
+  coord_df <- UFEED_normalize_coordinates(lon, lat, pairwise = TRUE)
+  coord_df$start_year <- UFEED_recycle_year_arg(start_year, nrow(coord_df), "start_year")
+  coord_df$end_year <- UFEED_recycle_year_arg(end_year, nrow(coord_df), "end_year")
+
+  message("Getting soil features...")
+  soil_features <- UFEED_get_soil_features(
+    lon = coord_df$lon,
+    lat = coord_df$lat,
+    soil_data_source = soil_data_source,
+    soil_data_local_dir = soil_data_local_dir,
+    pairwise = TRUE
+  )
+
+  out <- UFEED_wrap_up(
+    weather_data = weather_data,
+    weather_features = weather_features,
+    soil_features = soil_features,
+    clean_names = TRUE
+  )
+
+  coord_filter <- coord_df |>
     dplyr::transmute(
       lon = lon,
       lat = lat,
@@ -448,34 +653,23 @@ UFEED_history <- function(
       UFEED_end_date = as.Date(paste0(end_year, "-12-31"))
     )
 
-  UFEED_feature_df <- UFEED_feature_df |>
+  out <- out |>
     dplyr::left_join(coord_filter, by = c("lon", "lat")) |>
     dplyr::filter(Date >= UFEED_start_date, Date <= UFEED_end_date) |>
-    dplyr::select(-UFEED_start_date, -UFEED_end_date, -dplyr::any_of(c("start_year", "end_year")))
-
-  message("Getting soil features...")
-  UFEED_soil <- UFEED_get_soil_features(
-    lon = coords$lon,
-    lat = coords$lat,
-    soil_data_source = soil_data_source,
-    soil_data_local_dir = soil_data_local_dir,
-    pairwise = TRUE
-  )
-  UFEED_feature_df <- dplyr::left_join(UFEED_feature_df, UFEED_soil, by = c("lon", "lat"))
-
-  UFEED_feature_df <- UFEED_feature_df |>
-    UFEED_clean_names() |>
+    dplyr::select(-UFEED_start_date, -UFEED_end_date, -dplyr::any_of(c("start_year", "end_year"))) |>
     dplyr::arrange(lon, lat, Date)
 
   message("Historical UFEED dataframe ready.")
-  UFEED_feature_df
+  out
 }
 
 
 #' Generate present-season UFEED features
 #'
-#' Downloads current-year historical weather, recent weather, and forecast weather,
-#' then computes present-season UFEED features.
+#' High-level present wrapper. This function keeps the standard UFEED workflow
+#' hard-coded: download current-season weather plus recent/forecast Open-Meteo
+#' data, compute all standard weather features, extract soil features, and wrap
+#' everything into one modeling data frame.
 #'
 #' @param lon Numeric longitude.
 #' @param lat Numeric latitude.
@@ -503,12 +697,200 @@ UFEED_present <- function(
   soil_data_source <- match.arg(soil_data_source)
   included_module <- UFEED_validate_modules(included_module)
 
-  coords <- UFEED_normalize_coordinates(lon, lat, pairwise = TRUE)
+  coord_df <- UFEED_normalize_coordinates(lon, lat, pairwise = TRUE)
 
-  # UFEED_present is intentionally fixed to the current calendar year.
-  # The weather download functions will still internally pull the needed
-  # pre-season window from the previous year, because start_year is the
-  # current year.
+  message("Getting present-season weather data...")
+  weather_data <- UFEED_download_present_weather(
+    lon = lon,
+    lat = lat,
+    weather_data_source = weather_data_source,
+    parameters = UFEED_WEATHER_PARAMETERS_PRESENT,
+    pairwise = TRUE,
+    past_days = 9,
+    forecast_days = 8,
+    max_retries = 10,
+    retry_wait_sec = 2,
+    return_components = FALSE
+  )
+
+  message("Computing present UFEED weather features...")
+  weather_features <- UFEED_compute_weather_features(
+    weather_data = weather_data,
+    feature_profile = "present",
+    included_module = included_module,
+    cumsum_cols = UFEED_CUMSUM_COLS_PRESENT,
+    ewma_rewma_cols = UFEED_EWMA_REWMA_COLS_PRESENT,
+    ewma_rewma_windows = UFEED_EWMA_REWMA_WINDOWS,
+    cumulative_temp_rollsum_windows = UFEED_CUMULATIVE_TEMP_ROLLSUM_WINDOWS,
+    cumulative_temp_chilling_models = UFEED_CUMULATIVE_TEMP_CHILLING_MODELS,
+    cumulative_temp_gdh_bases = UFEED_CUMULATIVE_TEMP_GDH_BASES,
+    cumulative_temp_gdd_bases = UFEED_CUMULATIVE_TEMP_GDD_BASES,
+    season_max_cols = UFEED_SEASON_MAX_COLS,
+    season_min_cols = UFEED_SEASON_MIN_COLS,
+    message_progress = TRUE
+  )
+
+  message("Getting soil features...")
+  soil_features <- UFEED_get_soil_features(
+    lon = coord_df$lon,
+    lat = coord_df$lat,
+    soil_data_source = soil_data_source,
+    soil_data_local_dir = soil_data_local_dir,
+    pairwise = TRUE
+  )
+
+  current_year <- as.integer(format(Sys.Date(), "%Y"))
+  out <- UFEED_wrap_up(
+    weather_data = weather_data,
+    weather_features = weather_features,
+    soil_features = soil_features,
+    start_filter_date = as.Date(paste0(current_year, "-01-01")),
+    clean_names = TRUE
+  ) |>
+    dplyr::select(-dplyr::any_of(c("start_year", "end_year"))) |>
+    dplyr::arrange(lon, lat, Date)
+
+  message("Present UFEED dataframe ready.")
+  out
+}
+
+
+# -----------------------------------------------------------------------------
+# 4. Simplified modular user-facing workflow
+# -----------------------------------------------------------------------------
+
+#' Download historical daily weather data
+#'
+#' This exposes the historical weather download step used internally by
+#' `UFEED_history()`. The returned data include the pre-season window needed to
+#' compute dormant-season cumulative features: September 1 of the previous year
+#' in the Northern Hemisphere and March 1 of the previous year in the Southern
+#' Hemisphere.
+#'
+#' @param lon Numeric longitude.
+#' @param lat Numeric latitude.
+#' @param start_year Integer start year.
+#' @param end_year Integer end year.
+#' @param weather_data_source Weather source. One of `"power"`, `"power_ee"`, or `"power_open_meteo"`.
+#' @param parameters Character vector of weather variables to request. If `NULL`,
+#'   UFEED historical defaults are used.
+#' @param pairwise Logical. If `TRUE`, pair `lon[i]` with `lat[i]`. If `FALSE`,
+#'   use all longitude-latitude combinations.
+#' @param max_retries Maximum number of download attempts per site.
+#' @param retry_wait_sec Seconds to wait between retry attempts.
+#'
+#' @return A daily weather data frame.
+#' @export
+UFEED_download_history_weather <- function(
+    lon,
+    lat,
+    start_year,
+    end_year,
+    weather_data_source = c("power", "power_ee", "power_open_meteo"),
+    parameters = NULL,
+    pairwise = TRUE,
+    max_retries = 10,
+    retry_wait_sec = 2
+) {
+  weather_data_source <- match.arg(weather_data_source)
+  if (is.null(parameters)) parameters <- UFEED_WEATHER_PARAMETERS_HISTORY
+
+  current_year <- as.integer(format(Sys.Date(), "%Y"))
+  if (any(as.integer(end_year) >= current_year)) {
+    stop(
+      "Historical weather download is intended for completed historical years. ",
+      "`end_year` must be smaller than the current year (", current_year, "). ",
+      "Use `UFEED_download_present_weather()` for current-year and forecast-aware data.",
+      call. = FALSE
+    )
+  }
+
+  coords <- UFEED_normalize_coordinates(lon, lat, pairwise = pairwise)
+  coords$start_year <- UFEED_recycle_year_arg(start_year, nrow(coords), "start_year")
+  coords$end_year <- UFEED_recycle_year_arg(end_year, nrow(coords), "end_year")
+
+  if (any(coords$start_year > coords$end_year)) {
+    stop("`start_year` must be <= `end_year` for every coordinate pair.", call. = FALSE)
+  }
+
+  if (weather_data_source == "power_ee") {
+    ensure_ee_initialized(
+      ee_user = NULL,
+      ask = interactive(),
+      drive = FALSE,
+      gcs = FALSE
+    )
+    UFEED_check_ee_ready()
+  }
+
+  UFEED_download_weather_for_coordinates(
+    coords = coords,
+    weather_data_source = weather_data_source,
+    parameters = parameters,
+    max_retries = max_retries,
+    retry_wait_sec = retry_wait_sec
+  ) |>
+    dplyr::mutate(data_source = paste0("historical_", weather_data_source)) |>
+    UFEED_add_daily_temp_fluctuation() |>
+    dplyr::arrange(lon, lat, Date)
+}
+
+
+#' Download present-season daily weather data
+#'
+#' This exposes the weather download step used internally by `UFEED_present()`.
+#' It downloads a historical backbone beginning from the previous dormant-season
+#' start so that cumulative dormant-season features can be computed correctly,
+#' then overlays recent and forecast Open-Meteo data.
+#'
+#' For Northern Hemisphere sites, the historical backbone starts on September 1
+#' of the previous year. For Southern Hemisphere sites, UFEED uses the matching
+#' shifted seasonal calendar and starts on March 1 of the previous year.
+#'
+#' @param lon Numeric longitude.
+#' @param lat Numeric latitude.
+#' @param weather_data_source Weather source for the historical backbone. One of
+#'   `"power"`, `"power_ee"`, or `"power_open_meteo"`.
+#' @param parameters Character vector of weather variables to request. If `NULL`,
+#'   UFEED present defaults are used.
+#' @param pairwise Logical. If `TRUE`, pair `lon[i]` with `lat[i]`. If `FALSE`,
+#'   use all longitude-latitude combinations.
+#' @param past_days Number of past days to request from Open-Meteo.
+#' @param forecast_days Number of forecast days to request from Open-Meteo.
+#' @param weather_model Open-Meteo model name.
+#' @param soil_model Open-Meteo soil fallback model name.
+#' @param soil_na_lon_threshold Longitude threshold used to trigger Open-Meteo
+#'   soil fallback for recent/forecast weather.
+#' @param soil_aggregation Soil fallback aggregation method.
+#' @param max_retries Maximum number of download attempts per site.
+#' @param retry_wait_sec Seconds to wait between retry attempts.
+#' @param return_components Logical. If `TRUE`, return historical, recent/forecast,
+#'   and combined weather tables.
+#'
+#' @return A daily weather data frame, or a list of data frames if
+#'   `return_components = TRUE`.
+#' @export
+UFEED_download_present_weather <- function(
+    lon,
+    lat,
+    weather_data_source = c("power", "power_ee", "power_open_meteo"),
+    parameters = NULL,
+    pairwise = TRUE,
+    past_days = 9,
+    forecast_days = 8,
+    weather_model = "era5_seamless",
+    soil_model = "best_match",
+    soil_na_lon_threshold = -50,
+    soil_aggregation = "daily_mean",
+    max_retries = 10,
+    retry_wait_sec = 2,
+    return_components = FALSE
+) {
+  weather_data_source <- match.arg(weather_data_source)
+  if (is.null(parameters)) parameters <- UFEED_WEATHER_PARAMETERS_PRESENT
+
+  coords <- UFEED_normalize_coordinates(lon, lat, pairwise = pairwise)
+
   current_year <- as.integer(format(Sys.Date(), "%Y"))
   coords$start_year <- rep(current_year, nrow(coords))
   coords$end_year <- rep(current_year, nrow(coords))
@@ -520,35 +902,638 @@ UFEED_present <- function(
       drive = FALSE,
       gcs = FALSE
     )
-
     UFEED_check_ee_ready()
   }
 
-  message("Getting selected-source current-year weather backbone...")
   weather_history <- UFEED_download_weather_for_coordinates(
     coords = coords,
     weather_data_source = weather_data_source,
-    parameters = UFEED_WEATHER_PARAMETERS_PRESENT,
-    max_retries = 10,
-    retry_wait_sec = 2
+    parameters = parameters,
+    max_retries = max_retries,
+    retry_wait_sec = retry_wait_sec
   ) |>
     dplyr::mutate(data_source = paste0("historical_", weather_data_source))
 
-  message("Getting Open-Meteo recent and forecast data...")
   weather_recent_forecast <- UFEED_download_recent_forecast_for_coordinates(
     coords = coords,
-    past_days = 9,
-    forecast_days = 8,
-    weather_model = "era5_seamless",
-    soil_model = "best_match",
-    soil_na_lon_threshold = -50,
-    soil_aggregation = "daily_mean",
-    max_retries = 10,
-    retry_wait_sec = 2
+    past_days = past_days,
+    forecast_days = forecast_days,
+    weather_model = weather_model,
+    soil_model = soil_model,
+    soil_na_lon_threshold = soil_na_lon_threshold,
+    soil_aggregation = soil_aggregation,
+    max_retries = max_retries,
+    retry_wait_sec = retry_wait_sec
   ) |>
     dplyr::mutate(data_source = "recent_forecast_open_meteo")
 
-  weather_combined <- dplyr::bind_rows(
+  weather_combined <- UFEED_combine_present_weather(
+    weather_history = weather_history,
+    weather_recent_forecast = weather_recent_forecast
+  )
+
+  if (isTRUE(return_components)) {
+    return(list(
+      weather_history = weather_history,
+      weather_recent_forecast = weather_recent_forecast,
+      weather_combined = weather_combined
+    ))
+  }
+
+  weather_combined
+}
+
+
+#' Compute UFEED weather-derived features
+#'
+#' Computes one or more UFEED modules from an already prepared
+#' weather data frame. This is the main modular interface for users who want to
+#' download weather data separately or provide local weather station data.
+#'
+#' By default, this function uses the standard UFEED feature-variable sets for
+#' either the historical workflow or the present-season workflow. The default
+#' column sets are then intersected with the columns that are actually available
+#' in `weather_data`. Users can provide a smaller subset for each feature module,
+#' but the supplied column vectors must be subsets of the relevant UFEED default
+#' column set.
+#'
+#' @param weather_data Data frame containing at least `Date`, `lon`, and `lat`.
+#'   Required weather columns depend on the selected modules.
+#' @param feature_profile Character. One of `"auto"`, `"history"`, or `"present"`.
+#'   `"auto"` infers the profile from available columns. Use `"history"` for data
+#'   from `UFEED_download_history_weather()` and `"present"` for data from
+#'   `UFEED_download_present_weather()` when you want to be explicit.
+#' @param included_module Character vector of feature modules to compute. Valid
+#'   values are `"cumsum_features"`, `"EWMA_REWMA_features"`,
+#'   `"cumulative_temp_features"`, and `"season_summary_features"`.
+#'   The default computes all four modules. Users may provide any subset of
+#'   these module names. Any other value causes an error.
+#' @param cumsum_cols Character vector or `"default"`. Columns used for
+#'   cumulative-sum features. With `"default"`, the valid column set depends on
+#'   `feature_profile` and is automatically restricted to columns present in
+#'   `weather_data`. For `feature_profile = "history"`, valid choices are
+#'   `"ALLSKY_SFC_SW_DWN"`, `"ALLSKY_SFC_LW_DWN"`,
+#'   `"ALLSKY_SFC_PAR_TOT"`, and `"PRECTOTCORR"`. For
+#'   `feature_profile = "present"`, valid choices are
+#'   `"ALLSKY_SFC_SW_DWN"` and `"PRECTOTCORR"`. If users provide a
+#'   character vector, every value must be a valid choice for the selected
+#'   profile and must be present in `weather_data`; otherwise the function stops
+#'   with an error.
+#' @param ewma_rewma_cols Character vector or `"default"`. Columns used for
+#'   EWMA and reverse-EWMA features. With `"default"`, the valid column set
+#'   depends on `feature_profile` and is automatically restricted to columns
+#'   present in `weather_data`. For `feature_profile = "history"`, valid
+#'   choices are `"T2M"`, `"T2M_MAX"`, `"T2M_MIN"`, `"T2MDEW"`,
+#'   `"Daily_Temp_Fluctuation"`, `"ALLSKY_SFC_SW_DWN"`,
+#'   `"ALLSKY_SFC_LW_DWN"`, `"ALLSKY_SFC_PAR_TOT"`, `"PRECTOTCORR"`,
+#'   `"RH2M"`, `"WS2M"`, `"WD2M"`, `"WS2M_MAX"`,
+#'   `"WS2M_MIN"`, `"PS"`, `"GWETROOT"`, `"GWETTOP"`,
+#'   `"TSOIL1"`, `"TSOIL3"`, `"EVPTRNS"`, and `"CLOUD_AMT"`.
+#'   For `feature_profile = "present"`, valid choices are the same except
+#'   `"ALLSKY_SFC_LW_DWN"`, `"ALLSKY_SFC_PAR_TOT"`, and `"CLOUD_AMT"`
+#'   are not valid because they are not downloaded in the standard present-
+#'   weather workflow. If users provide a character vector, every value must be
+#'   a valid choice for the selected profile and must be present in
+#'   `weather_data`; otherwise the function stops with an error.
+#' @param cumsum_max_missing_prop Numeric between 0 and 1. Maximum missing-data
+#'   proportion allowed for cumulative-sum features.
+#' @param ewma_rewma_windows Integer vector. EWMA/REWMA window lengths.
+#'   The UFEED default is `c(2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90)`.
+#'   Users may provide any integer vector with values greater than or equal to 2,
+#'   such as `c(7, 14, 30)` or `c(5, 15, 45, 120)`. The value `1` is not
+#'   allowed because a one-day EWMA/REWMA window does not provide smoothing.
+#' @param ewma_rewma_max_missing_prop Numeric between 0 and 1. Maximum
+#'   missing-data proportion allowed inside each EWMA/REWMA window.
+#' @param cumulative_temp_rollsum_windows Integer vector. Rolling-sum windows
+#'   for cumulative temperature features. The UFEED default is
+#'   `c(3, 7, 14, 30, 60, 90)`. Users may provide any positive-integer vector;
+#'   it does not need to be a subset of the default.
+#' @param cumulative_temp_chilling_models Character vector. Chilling models to
+#'   compute. Valid choices are `"CU"`, `"Utah"`, `"NC"`, and
+#'   `"DP"`. Any other value causes an error.
+#' @param cumulative_temp_gdh_bases Integer vector. Base temperatures for GDH
+#'   features. The UFEED default is `c(10, 7, 4, 0)`. Users may provide any
+#'   finite integer vector; it does not need to be a subset of the default. Use
+#'   `integer(0)` to skip GDH features.
+#' @param cumulative_temp_gdd_bases Integer vector. Base temperatures for GDD
+#'   features. The UFEED default is `c(10, 7, 4, 0)`. Users may provide any
+#'   finite integer vector; it does not need to be a subset of the default. Use
+#'   `integer(0)` to skip GDD features.
+#' @param cumulative_temp_gdh_Topt Numeric. Optimum temperature for GDH. The
+#'   UFEED default is 25.
+#' @param cumulative_temp_gdh_Tcrit Numeric. Critical temperature for GDH. The
+#'   UFEED default is 36.
+#' @param cumulative_temp_fill_direction Character. Direction passed to
+#'   `tidyr::fill()` for missing `T2M_MAX` and `T2M_MIN`. Valid choices are
+#'   `"downup"`, `"down"`, `"up"`, and `"updown"`. Any other
+#'   value causes an error.
+#' @param cumulative_temp_message_missing Logical. Message when daily temperature
+#'   values are filled before hourly reconstruction.
+#' @param season_max_cols Character vector or `"default"`. Base weather
+#'   variables whose EWMA/REWMA features are summarized with season-to-date
+#'   maxima. Valid choices are `"T2M_MAX"`, `"Daily_Temp_Fluctuation"`,
+#'   `"WS2M_MAX"`, `"GWETROOT"`, `"GWETTOP"`, `"TSOIL1"`,
+#'   `"TSOIL3"`, and `"EVPTRNS"`. With `"default"`, these valid
+#'   choices are automatically restricted to columns present in `weather_data`.
+#'   If users provide a character vector, every value must be from this list and
+#'   must be present in `weather_data`; otherwise the function stops with an
+#'   error.
+#' @param season_min_cols Character vector or `"default"`. Base weather
+#'   variables whose EWMA/REWMA features are summarized with season-to-date
+#'   minima. Valid choices are `"T2M_MIN"`, `"Daily_Temp_Fluctuation"`,
+#'   `"GWETROOT"`, `"GWETTOP"`, `"TSOIL1"`, `"TSOIL3"`, and
+#'   `"EVPTRNS"`. With `"default"`, these valid choices are automatically
+#'   restricted to columns present in `weather_data`. If users provide a
+#'   character vector, every value must be from this list and must be present in
+#'   `weather_data`; otherwise the function stops with an error.
+#' @param start_filter_date Optional date. Rows before this date are removed after
+#'   feature computation.
+#' @param end_filter_date Optional date. Rows after this date are removed after
+#'   feature computation.
+#' @param message_progress Logical. Print progress messages.
+#'
+#' @return A data frame containing `Date`, `lon`, `lat`, and computed weather
+#'   features. Raw weather columns are not repeated; use `UFEED_wrap_up()` to
+#'   combine raw weather, computed features, and soil features.
+#'
+#' @examples
+#' # Standard profile-specific defaults:
+#' # features <- UFEED_compute_weather_features(weather, feature_profile = "history")
+#'
+#' # Smaller customized subset:
+#' # features <- UFEED_compute_weather_features(
+#' #   weather,
+#' #   feature_profile = "history",
+#' #   cumsum_cols = c("ALLSKY_SFC_SW_DWN", "PRECTOTCORR"),
+#' #   ewma_rewma_cols = c("T2M", "T2M_MAX", "T2M_MIN", "PRECTOTCORR"),
+#' #   ewma_rewma_windows = c(7, 14, 30),
+#' #   season_max_cols = c("T2M_MAX"),
+#' #   season_min_cols = c("T2M_MIN")
+#' # )
+#'
+#' @export
+UFEED_compute_weather_features <- function(
+    weather_data,
+    feature_profile = c("auto", "history", "present"),
+    included_module = c(
+      "cumsum_features",
+      "EWMA_REWMA_features",
+      "cumulative_temp_features",
+      "season_summary_features"
+    ),
+    cumsum_cols = "default",
+    ewma_rewma_cols = "default",
+    cumsum_max_missing_prop = 0.10,
+    ewma_rewma_windows = c(2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90),
+    ewma_rewma_max_missing_prop = 0.5,
+    cumulative_temp_rollsum_windows = c(3, 7, 14, 30, 60, 90),
+    cumulative_temp_chilling_models = c("CU", "Utah", "NC", "DP"),
+    cumulative_temp_gdh_bases = c(10, 7, 4, 0),
+    cumulative_temp_gdd_bases = c(0, 4, 7, 10),
+    cumulative_temp_gdh_Topt = 25,
+    cumulative_temp_gdh_Tcrit = 36,
+    cumulative_temp_fill_direction = "downup",
+    cumulative_temp_message_missing = TRUE,
+    season_max_cols = "default",
+    season_min_cols = "default",
+    start_filter_date = NULL,
+    end_filter_date = NULL,
+    message_progress = TRUE
+) {
+  UFEED_check_required_packages(c("dplyr"))
+
+  feature_profile <- match.arg(feature_profile)
+  included_module <- UFEED_validate_modules(included_module)
+
+  required_cols <- c("Date", "lon", "lat")
+  missing_cols <- setdiff(required_cols, names(weather_data))
+  if (length(missing_cols) > 0) {
+    stop(
+      "Missing columns for weather feature computation: ",
+      paste(missing_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  weather_data <- weather_data |>
+    dplyr::mutate(
+      Date = as.Date(Date),
+      lon = as.numeric(lon),
+      lat = as.numeric(lat)
+    ) |>
+    UFEED_add_daily_temp_fluctuation() |>
+    dplyr::arrange(lon, lat, Date)
+
+  if (feature_profile == "auto") {
+    feature_profile <- UFEED_infer_feature_profile(weather_data)
+    if (isTRUE(message_progress)) {
+      message("Using feature_profile = '", feature_profile, "' for weather feature defaults.")
+    }
+  }
+
+  default_cols <- UFEED_default_feature_columns(feature_profile)
+  weather_names <- names(weather_data)
+
+  cumsum_cols <- UFEED_resolve_feature_columns(
+    cols = cumsum_cols,
+    default_cols = default_cols$cumsum_cols,
+    weather_data_names = weather_names,
+    arg_name = "cumsum_cols",
+    inform_missing_default = isTRUE(message_progress)
+  )
+
+  ewma_rewma_cols <- UFEED_resolve_feature_columns(
+    cols = ewma_rewma_cols,
+    default_cols = default_cols$ewma_rewma_cols,
+    weather_data_names = weather_names,
+    arg_name = "ewma_rewma_cols",
+    inform_missing_default = isTRUE(message_progress)
+  )
+
+  season_max_cols <- UFEED_resolve_feature_columns(
+    cols = season_max_cols,
+    default_cols = default_cols$season_max_cols,
+    weather_data_names = weather_names,
+    arg_name = "season_max_cols",
+    inform_missing_default = isTRUE(message_progress)
+  )
+
+  season_min_cols <- UFEED_resolve_feature_columns(
+    cols = season_min_cols,
+    default_cols = default_cols$season_min_cols,
+    weather_data_names = weather_names,
+    arg_name = "season_min_cols",
+    inform_missing_default = isTRUE(message_progress)
+  )
+
+  # Season summaries are computed from EWMA/REWMA features, so the requested
+  # seasonal variables must also be included in the EWMA/REWMA computation.
+  season_max_cols <- intersect(season_max_cols, ewma_rewma_cols)
+  season_min_cols <- intersect(season_min_cols, ewma_rewma_cols)
+
+  ewma_rewma_windows <- UFEED_validate_positive_integerish(
+    ewma_rewma_windows,
+    "ewma_rewma_windows",
+    min_value = 2L
+  )
+
+  cumulative_temp_rollsum_windows <- UFEED_validate_positive_integerish(
+    cumulative_temp_rollsum_windows,
+    "cumulative_temp_rollsum_windows",
+    min_value = 1L
+  )
+
+  cumulative_temp_gdh_bases <- UFEED_validate_integerish(
+    cumulative_temp_gdh_bases,
+    "cumulative_temp_gdh_bases",
+    allow_empty = TRUE
+  )
+
+  cumulative_temp_gdd_bases <- UFEED_validate_integerish(
+    cumulative_temp_gdd_bases,
+    "cumulative_temp_gdd_bases",
+    allow_empty = TRUE
+  )
+
+  cumulative_temp_chilling_models <- UFEED_validate_subset(
+    cumulative_temp_chilling_models,
+    UFEED_CUMULATIVE_TEMP_CHILLING_MODELS,
+    "cumulative_temp_chilling_models"
+  )
+
+  cumulative_temp_fill_direction <- UFEED_validate_subset(
+    cumulative_temp_fill_direction,
+    c("downup", "down", "up", "updown"),
+    "cumulative_temp_fill_direction"
+  )
+
+  feature_df <- weather_data |>
+    dplyr::select(Date, lon, lat) |>
+    dplyr::distinct() |>
+    dplyr::arrange(lon, lat, Date)
+
+  weather_data_EWMA_REWMA <- NULL
+
+  if ("cumsum_features" %in% included_module) {
+    if (length(cumsum_cols) == 0L) {
+      warning(
+        "No available profile-specific columns for cumsum features. Skipping cumsum module.",
+        call. = FALSE
+      )
+    } else {
+      if (isTRUE(message_progress)) {
+        message("Computing cumsum features with: ", paste(cumsum_cols, collapse = ", "))
+      }
+      weather_data_cumsum <- .UFEED_compute_cumsum_features(
+        weather_data,
+        columns_for_cumsum = cumsum_cols,
+        max_missing_prop = cumsum_max_missing_prop
+      )
+      feature_df <- UFEED_safe_left_join_features(feature_df, weather_data_cumsum)
+    }
+  }
+
+  needs_ewma <- any(c("EWMA_REWMA_features", "season_summary_features") %in% included_module)
+  if (needs_ewma) {
+    if (length(ewma_rewma_cols) == 0L) {
+      warning(
+        "No available profile-specific columns for EWMA/REWMA features. Skipping EWMA/REWMA-dependent modules.",
+        call. = FALSE
+      )
+    } else {
+      if (isTRUE(message_progress)) {
+        message("Computing EWMA/REWMA features with: ", paste(ewma_rewma_cols, collapse = ", "))
+      }
+      weather_data_EWMA_REWMA <- .UFEED_compute_EWMA_REWMA_features(
+        weather_data,
+        columns_for_EWMA_REWMA = ewma_rewma_cols,
+        EWMA_REWMA_windows = ewma_rewma_windows,
+        max_missing_prop = ewma_rewma_max_missing_prop
+      )
+      if ("EWMA_REWMA_features" %in% included_module) {
+        feature_df <- UFEED_safe_left_join_features(feature_df, weather_data_EWMA_REWMA)
+      }
+    }
+  }
+
+  if ("cumulative_temp_features" %in% included_module) {
+    if (!all(c("T2M_MAX", "T2M_MIN") %in% names(weather_data))) {
+      warning(
+        "`T2M_MAX` and/or `T2M_MIN` are missing. Skipping cumulative temperature features.",
+        call. = FALSE
+      )
+    } else {
+      if (isTRUE(message_progress)) message("Computing cumulative temperature features...")
+      weather_data_cumulative_temp <- .UFEED_compute_cumulative_temp_features(
+        weather_data,
+        rollsum_windows = cumulative_temp_rollsum_windows,
+        chilling_models = cumulative_temp_chilling_models,
+        gdh_bases = cumulative_temp_gdh_bases,
+        gdd_bases = cumulative_temp_gdd_bases,
+        gdh_Topt = cumulative_temp_gdh_Topt,
+        gdh_Tcrit = cumulative_temp_gdh_Tcrit,
+        fill_direction = cumulative_temp_fill_direction,
+        message_missing_temp = cumulative_temp_message_missing
+      )
+      feature_df <- UFEED_safe_left_join_features(feature_df, weather_data_cumulative_temp)
+    }
+  }
+
+  if ("season_summary_features" %in% included_module) {
+    if (is.null(weather_data_EWMA_REWMA)) {
+      warning("EWMA/REWMA features are not available. Skipping season summary features.", call. = FALSE)
+    } else if (length(c(season_max_cols, season_min_cols)) == 0L) {
+      warning(
+        "No available profile-specific columns for season summary features. Skipping season summary module.",
+        call. = FALSE
+      )
+    } else {
+      if (isTRUE(message_progress)) {
+        message(
+          "Computing season summary features with max cols: ",
+          ifelse(length(season_max_cols) == 0L, "none", paste(season_max_cols, collapse = ", ")),
+          "; min cols: ",
+          ifelse(length(season_min_cols) == 0L, "none", paste(season_min_cols, collapse = ", "))
+        )
+      }
+      weather_data_season_summary <- .UFEED_compute_season_summary_features(
+        weather_data_EWMA_REWMA,
+        season_max_cols = season_max_cols,
+        season_min_cols = season_min_cols
+      )
+      feature_df <- UFEED_safe_left_join_features(feature_df, weather_data_season_summary)
+    }
+  }
+
+  if (!is.null(start_filter_date)) {
+    feature_df <- feature_df |>
+      dplyr::filter(Date >= as.Date(start_filter_date))
+  }
+
+  if (!is.null(end_filter_date)) {
+    feature_df <- feature_df |>
+      dplyr::filter(Date <= as.Date(end_filter_date))
+  }
+
+  feature_df |>
+    UFEED_remove_duplicate_columns() |>
+    dplyr::arrange(lon, lat, Date)
+}
+
+#' Get UFEED soil features
+#'
+#' Downloads or extracts soil covariates for coordinate pairs. This function is a
+#' thin user-facing wrapper around the current UFEED remote and local SoilGrids
+#' extraction functions.
+#'
+#' @param lon Numeric longitude.
+#' @param lat Numeric latitude.
+#' @param soil_data_source Soil source. One of `"remote"` or `"local"`.
+#' @param soil_data_local_dir Local SoilGrids directory if `soil_data_source = "local"`.
+#' @param pairwise Logical. If `TRUE`, pair `lon[i]` with `lat[i]`. If `FALSE`,
+#'   use all longitude-latitude combinations.
+#'
+#' @return A soil feature data frame.
+#' @export
+UFEED_get_soil_features <- function(
+    lon,
+    lat,
+    soil_data_source = c("remote", "local"),
+    soil_data_local_dir = "",
+    pairwise = TRUE
+) {
+  soil_data_source <- match.arg(soil_data_source)
+
+  if (soil_data_source == "remote") {
+    return(UFEED_soil_online(
+      lon = lon,
+      lat = lat,
+      pairwise = pairwise
+    ))
+  }
+
+  if (soil_data_source == "local") {
+    if (is.null(soil_data_local_dir) || !nzchar(soil_data_local_dir)) {
+      stop(
+        "`soil_data_local_dir` must be provided when soil_data_source = 'local'.",
+        call. = FALSE
+      )
+    }
+    if (!dir.exists(soil_data_local_dir)) {
+      stop(
+        "The local soil directory does not exist: ", soil_data_local_dir,
+        call. = FALSE
+      )
+    }
+    return(UFEED_soil_local_database(
+      lon = lon,
+      lat = lat,
+      soil_dir = soil_data_local_dir,
+      pairwise = pairwise
+    ))
+  }
+
+  stop("Unknown soil_data_source: ", soil_data_source, call. = FALSE)
+}
+
+
+#' Wrap weather, computed weather features, and soil features into one UFEED data frame
+#'
+#' This function combines raw weather data, computed weather features from
+#' `UFEED_compute_weather_features()`, and soil features from
+#' `UFEED_get_soil_features()` into one final modeling table.
+#'
+#' @param weather_data Raw daily weather data containing `Date`, `lon`, and `lat`.
+#' @param weather_features Optional computed weather feature table containing
+#'   `Date`, `lon`, and `lat`.
+#' @param soil_features Optional soil feature table containing `lon` and `lat`.
+#' @param start_filter_date Optional date. Rows before this date are removed after
+#'   joining.
+#' @param end_filter_date Optional date. Rows after this date are removed after
+#'   joining.
+#' @param clean_names Logical. Replace `-` with `_` in column names.
+#'
+#' @return One joined UFEED data frame.
+#' @export
+UFEED_wrap_up <- function(
+    weather_data,
+    weather_features = NULL,
+    soil_features = NULL,
+    start_filter_date = NULL,
+    end_filter_date = NULL,
+    clean_names = TRUE
+) {
+  UFEED_check_required_packages(c("dplyr"))
+
+  required_weather_cols <- c("Date", "lon", "lat")
+  missing_weather_cols <- setdiff(required_weather_cols, names(weather_data))
+  if (length(missing_weather_cols) > 0) {
+    stop(
+      "`weather_data` is missing required column(s): ",
+      paste(missing_weather_cols, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  out <- weather_data |>
+    dplyr::mutate(
+      Date = as.Date(Date),
+      lon = as.numeric(lon),
+      lat = as.numeric(lat)
+    ) |>
+    UFEED_add_daily_temp_fluctuation() |>
+    dplyr::arrange(lon, lat, Date)
+
+  if (!is.null(weather_features)) {
+    missing_feature_cols <- setdiff(required_weather_cols, names(weather_features))
+    if (length(missing_feature_cols) > 0) {
+      stop(
+        "`weather_features` is missing required column(s): ",
+        paste(missing_feature_cols, collapse = ", "),
+        call. = FALSE
+      )
+    }
+
+    duplicate_feature_cols <- setdiff(
+      intersect(names(weather_features), names(out)),
+      required_weather_cols
+    )
+
+    weather_features_join <- weather_features |>
+      dplyr::mutate(
+        Date = as.Date(Date),
+        lon = as.numeric(lon),
+        lat = as.numeric(lat)
+      ) |>
+      dplyr::select(-dplyr::any_of(duplicate_feature_cols))
+
+    out <- dplyr::left_join(
+      out,
+      weather_features_join,
+      by = c("Date", "lon", "lat")
+    )
+  }
+
+  if (!is.null(soil_features)) {
+    required_soil_cols <- c("lon", "lat")
+    missing_soil_cols <- setdiff(required_soil_cols, names(soil_features))
+    if (length(missing_soil_cols) > 0) {
+      stop(
+        "`soil_features` is missing required column(s): ",
+        paste(missing_soil_cols, collapse = ", "),
+        call. = FALSE
+      )
+    }
+
+    soil_features_join <- soil_features |>
+      dplyr::mutate(
+        lon = as.numeric(lon),
+        lat = as.numeric(lat)
+      )
+
+    duplicate_soil_cols <- setdiff(
+      intersect(names(soil_features_join), names(out)),
+      c("lon", "lat")
+    )
+
+    soil_features_join <- soil_features_join |>
+      dplyr::select(-dplyr::any_of(duplicate_soil_cols))
+
+    out <- dplyr::left_join(out, soil_features_join, by = c("lon", "lat"))
+  }
+
+  if (!is.null(start_filter_date)) {
+    out <- out |>
+      dplyr::filter(Date >= as.Date(start_filter_date))
+  }
+
+  if (!is.null(end_filter_date)) {
+    out <- out |>
+      dplyr::filter(Date <= as.Date(end_filter_date))
+  }
+
+  out <- out |>
+    UFEED_remove_duplicate_columns()
+
+  if (isTRUE(clean_names)) {
+    out <- UFEED_clean_names(out)
+  }
+
+  out |>
+    dplyr::arrange(lon, lat, Date)
+}
+
+
+# -----------------------------------------------------------------------------
+# 5. Internal orchestration helpers
+# -----------------------------------------------------------------------------
+
+UFEED_available_numeric_weather_columns <- function(weather_data) {
+  metadata_cols <- c(
+    "Date",
+    "lon",
+    "lat",
+    "start_year",
+    "end_year",
+    "data_source",
+    "data_source_period",
+    "source_priority"
+  )
+
+  numeric_cols <- names(weather_data)[
+    vapply(weather_data, function(x) is.numeric(x) || is.integer(x), logical(1))
+  ]
+
+  setdiff(numeric_cols, metadata_cols)
+}
+
+UFEED_combine_present_weather <- function(
+    weather_history,
+    weather_recent_forecast
+) {
+  UFEED_check_required_packages(c("dplyr"))
+
+  dplyr::bind_rows(
     weather_history,
     weather_recent_forecast
   ) |>
@@ -563,47 +1548,14 @@ UFEED_present <- function(
     dplyr::distinct(lon, lat, Date, .keep_all = TRUE) |>
     dplyr::select(-dplyr::any_of(c(
       "source_priority",
-      "data_source",
       "data_source_period",
-      "start_year",
-      "end_year",
       "ALLSKY_SFC_LW_DWN",
       "ALLSKY_SFC_PAR_TOT",
       "CLOUD_AMT"
     ))) |>
     UFEED_add_daily_temp_fluctuation() |>
     dplyr::arrange(lon, lat, Date)
-
-  message("Computing present UFEED weather features...")
-  UFEED_feature_df <- UFEED_compute_weather_features(
-    weather_data = weather_combined,
-    included_module = included_module,
-    cumsum_cols = UFEED_CUMSUM_COLS_PRESENT,
-    ewma_rewma_cols = UFEED_EWMA_REWMA_COLS_PRESENT,
-    start_filter_date = as.Date(paste0(format(Sys.Date(), "%Y"), "-01-01"))
-  )
-
-  message("Getting soil features...")
-  UFEED_soil <- UFEED_get_soil_features(
-    lon = coords$lon,
-    lat = coords$lat,
-    soil_data_source = soil_data_source,
-    soil_data_local_dir = soil_data_local_dir,
-    pairwise = TRUE
-  )
-  UFEED_feature_df <- dplyr::left_join(UFEED_feature_df, UFEED_soil, by = c("lon", "lat"))
-
-  UFEED_feature_df <- UFEED_feature_df |>
-    UFEED_clean_names() |>
-    dplyr::arrange(lon, lat, Date)
-
-  message("Present UFEED dataframe ready.")
-  UFEED_feature_df
 }
-
-# -----------------------------------------------------------------------------
-# 4. Core orchestration helpers
-# -----------------------------------------------------------------------------
 
 UFEED_download_weather_for_coordinates <- function(
     coords,
@@ -756,9 +1708,6 @@ UFEED_download_recent_forecast_for_coordinates <- function(
     dplyr::mutate(Date = as.Date(Date)) |>
     dplyr::arrange(lon, lat, Date)
 
-  # Some North America locations can miss daily soil variables in the main
-  # Open-Meteo forecast call. For lon <= -50, download hourly soil variables
-  # separately with best_match and aggregate them to POWER-style daily columns.
   soil_needed_sites <- coords |>
     dplyr::filter(lon <= soil_na_lon_threshold) |>
     dplyr::distinct(lon, lat)
@@ -866,120 +1815,8 @@ UFEED_download_recent_forecast_for_coordinates <- function(
     dplyr::arrange(lon, lat, Date)
 }
 
-UFEED_get_soil_features <- function(
-    lon,
-    lat,
-    soil_data_source = c("remote", "local"),
-    soil_data_local_dir = "",
-    pairwise = TRUE
-) {
-  soil_data_source <- match.arg(soil_data_source)
-
-  if (soil_data_source == "remote") {
-    return(UFEED_soil_online(
-      lon = lon,
-      lat = lat,
-      pairwise = pairwise
-    ))
-  }
-
-  if (soil_data_source == "local") {
-    if (is.null(soil_data_local_dir) || !nzchar(soil_data_local_dir)) {
-      stop(
-        "`soil_data_local_dir` must be provided when soil_data_source = 'local'.",
-        call. = FALSE
-      )
-    }
-    if (!dir.exists(soil_data_local_dir)) {
-      stop(
-        "The local soil directory does not exist: ", soil_data_local_dir,
-        call. = FALSE
-      )
-    }
-    return(UFEED_soil_local_database(
-      lon = lon,
-      lat = lat,
-      soil_dir = soil_data_local_dir,
-      pairwise = pairwise
-    ))
-  }
-
-  stop("Unknown soil_data_source: ", soil_data_source, call. = FALSE)
-}
-
-UFEED_compute_weather_features <- function(
-    weather_data,
-    included_module,
-    cumsum_cols,
-    ewma_rewma_cols,
-    start_filter_date = NULL
-) {
-  weather_data <- weather_data |>
-    dplyr::mutate(
-      Date = as.Date(Date),
-      lon = as.numeric(lon),
-      lat = as.numeric(lat)
-    ) |>
-    UFEED_add_daily_temp_fluctuation() |>
-    dplyr::arrange(lon, lat, Date)
-
-  df <- weather_data
-  weather_data_EWMA_REWMA <- NULL
-
-  if ("cumsum_features" %in% included_module) {
-    message("Computing cumsum features...")
-    weather_data_cumsum <- weather_cumsum_features_compute(
-      weather_data,
-      columns_for_cumsum = cumsum_cols
-    )
-    df <- UFEED_safe_left_join_features(df, weather_data_cumsum)
-  } else {
-    message("Skipping cumsum features...")
-  }
-
-  if ("EWMA_REWMA_features" %in% included_module) {
-    message("Computing EWMA/REWMA features...")
-    weather_data_EWMA_REWMA <- weather_EWMA_REWMA_features_compute(
-      weather_data,
-      columns_for_EWMA_REWMA = ewma_rewma_cols
-    )
-    df <- UFEED_safe_left_join_features(df, weather_data_EWMA_REWMA)
-  } else {
-    message("Skipping EWMA/REWMA features...")
-  }
-
-  if ("cumulative_temp_features" %in% included_module) {
-    message("Computing cumulative temperature features...")
-    weather_data_cumulative_temp <- weather_cumulative_temp_features_compute(weather_data)
-    df <- UFEED_safe_left_join_features(df, weather_data_cumulative_temp)
-  } else {
-    message("Skipping cumulative temperature features...")
-  }
-
-  if ("season_summary_features" %in% included_module) {
-    if (is.null(weather_data_EWMA_REWMA)) {
-      warning("EWMA_REWMA data not available. Cannot compute season summary features.", call. = FALSE)
-    } else {
-      message("Computing season summary features...")
-      weather_data_season_summary <- weather_season_summary_compute(weather_data_EWMA_REWMA)
-      df <- UFEED_safe_left_join_features(df, weather_data_season_summary)
-    }
-  } else {
-    message("Skipping season summary features...")
-  }
-
-  if (!is.null(start_filter_date)) {
-    df <- df |>
-      dplyr::filter(Date >= as.Date(start_filter_date))
-  }
-
-  df |>
-    UFEED_remove_duplicate_columns() |>
-    dplyr::arrange(lon, lat, Date)
-}
-
 # -----------------------------------------------------------------------------
-# 5. Weather download functions
+# 6. Weather download functions
 # -----------------------------------------------------------------------------
 
 UFEED_prepare_power_parameters <- function(parameters) {
@@ -1749,11 +2586,11 @@ get_weather_data_power_ee <- function(
   )
 
   download_fc_csv_local <- function(
-      fc,
-      out_csv,
-      max_retries = 5,
-      retry_wait_sec = 5,
-      timeout_sec = 300
+    fc,
+    out_csv,
+    max_retries = 5,
+    retry_wait_sec = 5,
+    timeout_sec = 300
   ) {
     url <- tryCatch({
       fc$getDownloadURL("csv")
@@ -1914,10 +2751,13 @@ get_weather_data_power_ee <- function(
 }
 
 # -----------------------------------------------------------------------------
-# 6. Weather feature functions
+# 7. Internal weather feature engines
 # -----------------------------------------------------------------------------
+# These functions are implementation details. They are intentionally not exported.
+# Users should call UFEED_compute_weather_features() instead.
 
-weather_cumsum_features_compute <- function(
+
+.UFEED_compute_cumsum_features <- function(
     weather_data,
     columns_for_cumsum = UFEED_CUMSUM_COLS_HISTORY,
     max_missing_prop = 0.10
@@ -2008,7 +2848,7 @@ weather_cumsum_features_compute <- function(
     dplyr::arrange(lon, lat, Date)
 }
 
-weather_EWMA_REWMA_features_compute <- function(
+.UFEED_compute_EWMA_REWMA_features <- function(
     weather_data,
     columns_for_EWMA_REWMA = UFEED_EWMA_REWMA_COLS_HISTORY,
     EWMA_REWMA_windows = c(2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90),
@@ -2100,7 +2940,40 @@ weather_EWMA_REWMA_features_compute <- function(
     dplyr::arrange(lon, lat, Date)
 }
 
-weather_cumulative_temp_features_compute <- function(weather_data) {
+#' Compute cumulative temperature features
+#'
+#' Reconstructs hourly temperature from daily Tmin/Tmax and computes chilling,
+#' GDH, GDD, rolling-sum, year-to-date, and dormant-season-to-date features.
+#'
+#' @param weather_data Daily weather data containing `Date`, `lon`, `lat`,
+#'   `T2M_MAX`, and `T2M_MIN`.
+#' @param rollsum_windows Integer rolling-sum windows for daily cumulative
+#'   temperature variables.
+#' @param chilling_models Chilling models to compute. Allowed values are
+#'   `"CU"`, `"Utah"`, `"NC"`, and `"DP"`.
+#' @param gdh_bases Integer base temperatures for GDH features. Use `integer(0)` to skip.
+#' @param gdd_bases Integer base temperatures for GDD features. Use `integer(0)` to skip.
+#' @param gdh_Topt Optimum temperature for `fruclimadapt::GDH_linear()`.
+#' @param gdh_Tcrit Critical temperature for `fruclimadapt::GDH_linear()`.
+#' @param fill_direction Direction passed to `tidyr::fill()` for missing
+#'   `T2M_MAX` and `T2M_MIN` values.
+#' @param message_missing_temp Logical. Report filled missing daily temperature
+#'   values.
+#'
+#' @return A data frame of cumulative temperature features.
+#' @keywords internal
+#' @noRd
+.UFEED_compute_cumulative_temp_features <- function(
+    weather_data,
+    rollsum_windows = UFEED_CUMULATIVE_TEMP_ROLLSUM_WINDOWS,
+    chilling_models = UFEED_CUMULATIVE_TEMP_CHILLING_MODELS,
+    gdh_bases = UFEED_CUMULATIVE_TEMP_GDH_BASES,
+    gdd_bases = UFEED_CUMULATIVE_TEMP_GDD_BASES,
+    gdh_Topt = 25,
+    gdh_Tcrit = 36,
+    fill_direction = "downup",
+    message_missing_temp = TRUE
+) {
   UFEED_check_required_packages(c(
     "dplyr",
     "tidyr",
@@ -2110,6 +2983,28 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
     "dormancyR",
     "fruclimadapt"
   ))
+
+  rollsum_windows <- UFEED_validate_positive_integerish(
+    rollsum_windows,
+    "rollsum_windows",
+    allow_empty = TRUE,
+    min_value = 1L
+  )
+  chilling_models <- UFEED_validate_subset(
+    chilling_models,
+    UFEED_CUMULATIVE_TEMP_CHILLING_MODELS,
+    "chilling_models"
+  )
+  gdh_bases <- UFEED_validate_integerish(
+    gdh_bases,
+    "gdh_bases",
+    allow_empty = TRUE
+  )
+  gdd_bases <- UFEED_validate_integerish(
+    gdd_bases,
+    "gdd_bases",
+    allow_empty = TRUE
+  )
 
   required_cols <- c("Date", "lon", "lat", "T2M_MAX", "T2M_MIN")
   missing_cols <- setdiff(required_cols, names(weather_data))
@@ -2141,7 +3036,7 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
       )
 
     df_daily <- df_daily |>
-      tidyr::fill(Tmax, Tmin, .direction = "downup")
+      tidyr::fill(Tmax, Tmin, .direction = fill_direction)
 
     if (any(is.na(df_daily$Tmax)) || any(is.na(df_daily$Tmin))) {
       stop(
@@ -2179,25 +3074,47 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
       latitude = lat_i
     )[[1]]
 
-    CU <- dormancyR::chilling_units(
-      df_hourly$Temp,
-      summ = FALSE
-    )
+    daily_input <- data.frame(Date = as.Date(df_hourly$Date))
 
-    Utah <- dormancyR::modified_utah_model(
-      df_hourly$Temp,
-      summ = FALSE
-    )
+    if ("CU" %in% chilling_models) {
+      CU <- dormancyR::chilling_units(
+        df_hourly$Temp,
+        summ = FALSE
+      )
+      daily_input$CU <- dplyr::if_else(CU < 0, 0, CU)
+    }
 
-    NC <- dormancyR::north_carolina_model(
-      df_hourly$Temp,
-      summ = FALSE
-    )
+    if ("Utah" %in% chilling_models) {
+      Utah <- dormancyR::modified_utah_model(
+        df_hourly$Temp,
+        summ = FALSE
+      )
+      daily_input$Utah <- dplyr::if_else(Utah < 0, 0, Utah)
+    }
 
-    DP <- chillR::Dynamic_Model(
-      df_hourly$Temp,
-      summ = FALSE
-    )
+    if ("NC" %in% chilling_models) {
+      NC <- dormancyR::north_carolina_model(
+        df_hourly$Temp,
+        summ = FALSE
+      )
+      daily_input$NC <- dplyr::if_else(NC < 0, 0, NC)
+    }
+
+    if ("DP" %in% chilling_models) {
+      daily_input$DP <- chillR::Dynamic_Model(
+        df_hourly$Temp,
+        summ = FALSE
+      )
+    }
+
+    for (base in gdd_bases) {
+      gdd_name <- UFEED_temp_base_name("GDD", base)
+      daily_input[[gdd_name]] <- chillR::GDD(
+        df_hourly$Temp,
+        summ = FALSE,
+        Tbase = base
+      )
+    }
 
     df_hourly_for_gdh <- df_hourly[
       ,
@@ -2205,134 +3122,74 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
       drop = FALSE
     ]
 
-    GDH_10 <- fruclimadapt::GDH_linear(
-      df_hourly_for_gdh,
-      Tb = 10,
-      Topt = 25,
-      Tcrit = 36
-    )
+    gdh_daily <- NULL
 
-    GDH_7 <- fruclimadapt::GDH_linear(
-      df_hourly_for_gdh,
-      Tb = 7,
-      Topt = 25,
-      Tcrit = 36
-    )
+    for (base in gdh_bases) {
+      gdh_name <- UFEED_temp_base_name("GDH", base)
+      gdh_result <- fruclimadapt::GDH_linear(
+        df_hourly_for_gdh,
+        Tb = base,
+        Topt = gdh_Topt,
+        Tcrit = gdh_Tcrit
+      )
+      one_gdh <- data.frame(Date = as.Date(gdh_result$Date))
+      one_gdh[[gdh_name]] <- gdh_result$GDH
 
-    GDH_4 <- fruclimadapt::GDH_linear(
-      df_hourly_for_gdh,
-      Tb = 4,
-      Topt = 25,
-      Tcrit = 36
-    )
+      if (is.null(gdh_daily)) {
+        gdh_daily <- one_gdh
+      } else {
+        gdh_daily <- dplyr::left_join(gdh_daily, one_gdh, by = "Date")
+      }
+    }
 
-    GDH_0 <- fruclimadapt::GDH_linear(
-      df_hourly_for_gdh,
-      Tb = 0,
-      Topt = 25,
-      Tcrit = 36
-    )
-
-    GDD_0 <- chillR::GDD(
-      df_hourly$Temp,
-      summ = FALSE,
-      Tbase = 0
-    )
-
-    GDD_4 <- chillR::GDD(
-      df_hourly$Temp,
-      summ = FALSE,
-      Tbase = 4
-    )
-
-    GDD_7 <- chillR::GDD(
-      df_hourly$Temp,
-      summ = FALSE,
-      Tbase = 7
-    )
-
-    GDD_10 <- chillR::GDD(
-      df_hourly$Temp,
-      summ = FALSE,
-      Tbase = 10
-    )
-
-    CU <- dplyr::if_else(CU < 0, 0, CU)
-    Utah <- dplyr::if_else(Utah < 0, 0, Utah)
-    NC <- dplyr::if_else(NC < 0, 0, NC)
-
-    all_chilling_data <- data.frame(
-      Date = as.Date(df_hourly$Date),
-      CU = CU,
-      Utah = Utah,
-      NC = NC,
-      DP = DP,
-      GDD_0 = GDD_0,
-      GDD_4 = GDD_4,
-      GDD_7 = GDD_7,
-      GDD_10 = GDD_10
-    )
-
-    GDHs <- data.frame(
-      Date = as.Date(GDH_10$Date),
-      GDH10 = GDH_10$GDH,
-      GDH_7 = GDH_7$GDH,
-      GDH_4 = GDH_4$GDH,
-      GDH_0 = GDH_0$GDH
-    )
-
-    daily <- all_chilling_data |>
+    daily <- daily_input |>
       dplyr::group_by(Date) |>
       dplyr::summarise(
         dplyr::across(dplyr::everything(), sum),
         .groups = "drop"
       ) |>
-      dplyr::arrange(Date) |>
-      dplyr::left_join(GDHs, by = "Date")
+      dplyr::arrange(Date)
 
-    columns_for_rollsum <- c(
-      "CU",
-      "NC",
-      "Utah",
-      "DP",
-      "GDD_0",
-      "GDD_4",
-      "GDD_7",
-      "GDD_10",
-      "GDH10",
-      "GDH_7",
-      "GDH_4",
-      "GDH_0"
+    if (!is.null(gdh_daily)) {
+      daily <- daily |>
+        dplyr::left_join(gdh_daily, by = "Date")
+    }
+
+    chilling_cols <- intersect(chilling_models, names(daily))
+    gdd_cols <- vapply(
+      gdd_bases,
+      function(base) UFEED_temp_base_name("GDD", base),
+      character(1)
     )
+    gdd_cols <- intersect(gdd_cols, names(daily))
 
-    window_lengths <- c(3, 7, 14, 30, 60, 90)
+    gdh_cols <- vapply(
+      gdh_bases,
+      function(base) UFEED_temp_base_name("GDH", base),
+      character(1)
+    )
+    gdh_cols <- intersect(gdh_cols, names(daily))
 
-    for (column in columns_for_rollsum) {
-      for (window in window_lengths) {
-        daily[[paste0(column, "_", window, "days")]] <- zoo::rollsum(
-          daily[[column]],
-          window,
-          fill = NA,
-          align = "right"
-        )
+    columns_for_rollsum <- c(chilling_cols, gdd_cols, gdh_cols)
+
+    if (length(columns_for_rollsum) > 0L && length(rollsum_windows) > 0L) {
+      for (column in columns_for_rollsum) {
+        for (window in rollsum_windows) {
+          daily[[paste0(column, "_", window, "days")]] <- zoo::rollsum(
+            daily[[column]],
+            window,
+            fill = NA,
+            align = "right"
+          )
+        }
       }
     }
 
     daily$lat <- lat_i
     daily$lon <- lon_i
 
-    dormant_columns <- c("CU", "NC", "Utah", "DP")
-
-    columns_for_cumsum_year <- c(
-      "GDD_0",
-      "GDD_4",
-      "GDD_7",
-      "GDD_10",
-      "GDH10",
-      "GDH_7",
-      "GDH_4",
-      "GDH_0"
-    )
+    dormant_columns <- chilling_cols
+    columns_for_cumsum_year <- c(gdd_cols, gdh_cols)
 
     seasonal_cumsum <- daily |>
       dplyr::select(Date, lat, lon, dplyr::all_of(columns_for_rollsum)) |>
@@ -2344,25 +3201,33 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
           Month %in% 1:8 ~ paste0(lubridate::year(Date) - 1, "-", lubridate::year(Date))
         ),
         growth_season = paste0(lubridate::year(Date), "-", lubridate::year(Date) + 1)
-      ) |>
-      dplyr::group_by(lat, lon, growth_season) |>
-      dplyr::mutate(
-        dplyr::across(
-          dplyr::all_of(columns_for_cumsum_year),
-          cumsum,
-          .names = "{.col}_y2d"
-        )
-      ) |>
-      dplyr::ungroup() |>
-      dplyr::group_by(lat, lon, dormant_season) |>
-      dplyr::mutate(
-        dplyr::across(
-          dplyr::all_of(dormant_columns),
-          cumsum,
-          .names = "{.col}_dormant2d"
-        )
-      ) |>
-      dplyr::ungroup()
+      )
+
+    if (length(columns_for_cumsum_year) > 0L) {
+      seasonal_cumsum <- seasonal_cumsum |>
+        dplyr::group_by(lat, lon, growth_season) |>
+        dplyr::mutate(
+          dplyr::across(
+            dplyr::all_of(columns_for_cumsum_year),
+            cumsum,
+            .names = "{.col}_y2d"
+          )
+        ) |>
+        dplyr::ungroup()
+    }
+
+    if (length(dormant_columns) > 0L) {
+      seasonal_cumsum <- seasonal_cumsum |>
+        dplyr::group_by(lat, lon, dormant_season) |>
+        dplyr::mutate(
+          dplyr::across(
+            dplyr::all_of(dormant_columns),
+            cumsum,
+            .names = "{.col}_dormant2d"
+          )
+        ) |>
+        dplyr::ungroup()
+    }
 
     dormant_cols <- grep(
       "_dormant2d$",
@@ -2370,28 +3235,32 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
       value = TRUE
     )
 
-    seasonal_cumsum <- seasonal_cumsum |>
-      dplyr::group_by(lat, lon, dormant_season) |>
-      dplyr::arrange(Date, .by_group = TRUE) |>
-      dplyr::mutate(
-        dplyr::across(
-          dplyr::all_of(dormant_cols),
-          ~ {
-            season_end_year <- as.integer(substr(dplyr::first(dormant_season), 6, 9))
-            cap_date <- as.Date(paste0(season_end_year, "-04-30"))
+    if (length(dormant_cols) > 0L) {
+      seasonal_cumsum <- seasonal_cumsum |>
+        dplyr::group_by(lat, lon, dormant_season) |>
+        dplyr::arrange(Date, .by_group = TRUE) |>
+        dplyr::mutate(
+          dplyr::across(
+            dplyr::all_of(dormant_cols),
+            ~ {
+              season_end_year <- as.integer(substr(dplyr::first(dormant_season), 6, 9))
+              cap_date <- as.Date(paste0(season_end_year, "-04-30"))
 
-            cap_val <- .x[Date == cap_date][1]
-            cap_val <- cap_val[!is.na(cap_val)][1]
+              cap_val <- .x[Date == cap_date][1]
+              cap_val <- cap_val[!is.na(cap_val)][1]
 
-            if (length(cap_val) == 0 || is.na(cap_val)) {
-              cap_val <- NA_real_
+              if (length(cap_val) == 0 || is.na(cap_val)) {
+                cap_val <- NA_real_
+              }
+
+              dplyr::if_else(Date > cap_date, cap_val, .x)
             }
+          )
+        ) |>
+        dplyr::ungroup()
+    }
 
-            dplyr::if_else(Date > cap_date, cap_val, .x)
-          }
-        )
-      ) |>
-      dplyr::ungroup() |>
+    seasonal_cumsum <- seasonal_cumsum |>
       dplyr::select(
         -Month,
         -dormant_season,
@@ -2415,7 +3284,7 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
         dplyr::select(-Date_original)
     }
 
-    if (missing_temp_summary$n_days_with_Tmax_or_Tmin_NA > 0) {
+    if (isTRUE(message_missing_temp) && missing_temp_summary$n_days_with_Tmax_or_Tmin_NA > 0) {
       message(
         missing_temp_summary$n_days_with_Tmax_or_Tmin_NA,
         " days had NA in Tmax and/or Tmin for lon = ",
@@ -2440,7 +3309,7 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
     dplyr::arrange(lon, lat, Date)
 }
 
-weather_season_summary_compute <- function(
+.UFEED_compute_season_summary_features <- function(
     weather_data_EWMA_REWMA,
     season_max_cols = c("T2M_MAX", "Daily_Temp_Fluctuation", "WS2M_MAX", "GWETROOT", "GWETTOP", "TSOIL1", "TSOIL3", "EVPTRNS"),
     season_min_cols = c("T2M_MIN", "Daily_Temp_Fluctuation", "GWETROOT", "GWETTOP", "TSOIL1", "TSOIL3", "EVPTRNS")
@@ -2509,7 +3378,7 @@ weather_season_summary_compute <- function(
 }
 
 # -----------------------------------------------------------------------------
-# 7. Soil functions
+# 8. Soil functions
 # -----------------------------------------------------------------------------
 
 UFEED_soil_online <- function(
@@ -2886,7 +3755,7 @@ UFEED_soil_local_database <- function(
 
 
 # -----------------------------------------------------------------------------
-# 8. Elevation helper
+# 9. Elevation helper
 # -----------------------------------------------------------------------------
 
 get_elev_open_meteo <- function(coord_df, batch_size = 90) {
