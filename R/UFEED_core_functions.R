@@ -2101,39 +2101,34 @@ weather_EWMA_REWMA_features_compute <- function(
 }
 
 weather_cumulative_temp_features_compute <- function(weather_data) {
-  UFEED_check_required_packages(c("dplyr", "tidyr", "lubridate", "zoo"))
-
-  required_temp_functions <- c(
-    "stack_hourly_temps",
-    "chilling_units",
-    "modified_utah_model",
-    "north_carolina_model",
-    "Dynamic_Model",
-    "GDH_linear",
-    "GDD"
-  )
-  missing_temp_functions <- required_temp_functions[
-    !vapply(required_temp_functions, exists, logical(1), mode = "function", inherits = TRUE)
-  ]
-  if (length(missing_temp_functions) > 0) {
-    stop(
-      "Missing required temperature feature function(s): ",
-      paste(missing_temp_functions, collapse = ", "),
-      ". Attach or import the packages that provide these functions before computing cumulative temperature features.",
-      call. = FALSE
-    )
-  }
+  UFEED_check_required_packages(c(
+    "dplyr",
+    "tidyr",
+    "lubridate",
+    "zoo",
+    "chillR",
+    "dormancyR",
+    "fruclimadapt"
+  ))
 
   required_cols <- c("Date", "lon", "lat", "T2M_MAX", "T2M_MIN")
   missing_cols <- setdiff(required_cols, names(weather_data))
+
   if (length(missing_cols) > 0) {
-    stop("Missing columns for cumulative temperature features: ", paste(missing_cols, collapse = ", "), call. = FALSE)
+    stop(
+      "Missing columns for cumulative temperature features: ",
+      paste(missing_cols, collapse = ", "),
+      call. = FALSE
+    )
   }
 
   compute_one_site <- function(site_data) {
     df_daily <- site_data |>
       dplyr::select(Date, lon, lat, T2M_MAX, T2M_MIN) |>
-      dplyr::rename(Tmax = T2M_MAX, Tmin = T2M_MIN) |>
+      dplyr::rename(
+        Tmax = T2M_MAX,
+        Tmin = T2M_MIN
+      ) |>
       dplyr::mutate(Date = as.Date(Date)) |>
       dplyr::arrange(Date)
 
@@ -2150,8 +2145,11 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
 
     if (any(is.na(df_daily$Tmax)) || any(is.na(df_daily$Tmin))) {
       stop(
-        "Tmax or Tmin still contains NA after filling for lon = ", unique(df_daily$lon),
-        ", lat = ", unique(df_daily$lat), ".",
+        "Tmax or Tmin still contains NA after filling for lon = ",
+        unique(df_daily$lon),
+        ", lat = ",
+        unique(df_daily$lat),
+        ".",
         call. = FALSE
       )
     }
@@ -2176,23 +2174,88 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
         Hour = lubridate::hour(Date)
       )
 
-    # These functions are provided by chillR/fruclimadapt/dormancyR depending on your setup.
-    df_hourly <- stack_hourly_temps(df_shifted, latitude = lat_i)[[1]]
+    df_hourly <- chillR::stack_hourly_temps(
+      df_shifted,
+      latitude = lat_i
+    )[[1]]
 
-    CU <- chilling_units(df_hourly$Temp, summ = FALSE)
-    Utah <- modified_utah_model(df_hourly$Temp, summ = FALSE)
-    NC <- north_carolina_model(df_hourly$Temp, summ = FALSE)
-    DP <- Dynamic_Model(df_hourly$Temp, summ = FALSE)
+    CU <- dormancyR::chilling_units(
+      df_hourly$Temp,
+      summ = FALSE
+    )
 
-    GDH_10 <- GDH_linear(df_hourly[, !names(df_hourly) %in% c("datetime", "Date")], Tb = 10, Topt = 25, Tcrit = 36)
-    GDH_7 <- GDH_linear(df_hourly[, !names(df_hourly) %in% c("datetime", "Date")], Tb = 7, Topt = 25, Tcrit = 36)
-    GDH_4 <- GDH_linear(df_hourly[, !names(df_hourly) %in% c("datetime", "Date")], Tb = 4, Topt = 25, Tcrit = 36)
-    GDH_0 <- GDH_linear(df_hourly[, !names(df_hourly) %in% c("datetime", "Date")], Tb = 0, Topt = 25, Tcrit = 36)
+    Utah <- dormancyR::modified_utah_model(
+      df_hourly$Temp,
+      summ = FALSE
+    )
 
-    GDD_0 <- GDD(df_hourly$Temp, summ = FALSE, Tbase = 0)
-    GDD_4 <- GDD(df_hourly$Temp, summ = FALSE, Tbase = 4)
-    GDD_7 <- GDD(df_hourly$Temp, summ = FALSE, Tbase = 7)
-    GDD_10 <- GDD(df_hourly$Temp, summ = FALSE, Tbase = 10)
+    NC <- dormancyR::north_carolina_model(
+      df_hourly$Temp,
+      summ = FALSE
+    )
+
+    DP <- chillR::Dynamic_Model(
+      df_hourly$Temp,
+      summ = FALSE
+    )
+
+    df_hourly_for_gdh <- df_hourly[
+      ,
+      !names(df_hourly) %in% c("datetime", "Date"),
+      drop = FALSE
+    ]
+
+    GDH_10 <- fruclimadapt::GDH_linear(
+      df_hourly_for_gdh,
+      Tb = 10,
+      Topt = 25,
+      Tcrit = 36
+    )
+
+    GDH_7 <- fruclimadapt::GDH_linear(
+      df_hourly_for_gdh,
+      Tb = 7,
+      Topt = 25,
+      Tcrit = 36
+    )
+
+    GDH_4 <- fruclimadapt::GDH_linear(
+      df_hourly_for_gdh,
+      Tb = 4,
+      Topt = 25,
+      Tcrit = 36
+    )
+
+    GDH_0 <- fruclimadapt::GDH_linear(
+      df_hourly_for_gdh,
+      Tb = 0,
+      Topt = 25,
+      Tcrit = 36
+    )
+
+    GDD_0 <- chillR::GDD(
+      df_hourly$Temp,
+      summ = FALSE,
+      Tbase = 0
+    )
+
+    GDD_4 <- chillR::GDD(
+      df_hourly$Temp,
+      summ = FALSE,
+      Tbase = 4
+    )
+
+    GDD_7 <- chillR::GDD(
+      df_hourly$Temp,
+      summ = FALSE,
+      Tbase = 7
+    )
+
+    GDD_10 <- chillR::GDD(
+      df_hourly$Temp,
+      summ = FALSE,
+      Tbase = 10
+    )
 
     CU <- dplyr::if_else(CU < 0, 0, CU)
     Utah <- dplyr::if_else(Utah < 0, 0, Utah)
@@ -2223,15 +2286,25 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
       dplyr::summarise(
         dplyr::across(dplyr::everything(), sum),
         .groups = "drop"
-        ) |>
+      ) |>
       dplyr::arrange(Date) |>
       dplyr::left_join(GDHs, by = "Date")
 
     columns_for_rollsum <- c(
-      "CU", "NC", "Utah", "DP",
-      "GDD_0", "GDD_4", "GDD_7", "GDD_10",
-      "GDH10", "GDH_7", "GDH_4", "GDH_0"
+      "CU",
+      "NC",
+      "Utah",
+      "DP",
+      "GDD_0",
+      "GDD_4",
+      "GDD_7",
+      "GDD_10",
+      "GDH10",
+      "GDH_7",
+      "GDH_4",
+      "GDH_0"
     )
+
     window_lengths <- c(3, 7, 14, 30, 60, 90)
 
     for (column in columns_for_rollsum) {
@@ -2249,9 +2322,16 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
     daily$lon <- lon_i
 
     dormant_columns <- c("CU", "NC", "Utah", "DP")
+
     columns_for_cumsum_year <- c(
-      "GDD_0", "GDD_4", "GDD_7", "GDD_10",
-      "GDH10", "GDH_7", "GDH_4", "GDH_0"
+      "GDD_0",
+      "GDD_4",
+      "GDD_7",
+      "GDD_10",
+      "GDH10",
+      "GDH_7",
+      "GDH_4",
+      "GDH_0"
     )
 
     seasonal_cumsum <- daily |>
@@ -2284,7 +2364,11 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
       ) |>
       dplyr::ungroup()
 
-    dormant_cols <- grep("_dormant2d$", names(seasonal_cumsum), value = TRUE)
+    dormant_cols <- grep(
+      "_dormant2d$",
+      names(seasonal_cumsum),
+      value = TRUE
+    )
 
     seasonal_cumsum <- seasonal_cumsum |>
       dplyr::group_by(lat, lon, dormant_season) |>
@@ -2295,9 +2379,14 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
           ~ {
             season_end_year <- as.integer(substr(dplyr::first(dormant_season), 6, 9))
             cap_date <- as.Date(paste0(season_end_year, "-04-30"))
+
             cap_val <- .x[Date == cap_date][1]
             cap_val <- cap_val[!is.na(cap_val)][1]
-            if (length(cap_val) == 0 || is.na(cap_val)) cap_val <- NA_real_
+
+            if (length(cap_val) == 0 || is.na(cap_val)) {
+              cap_val <- NA_real_
+            }
+
             dplyr::if_else(Date > cap_date, cap_val, .x)
           }
         )
@@ -2310,11 +2399,18 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
         -dplyr::all_of(columns_for_rollsum)
       )
 
-    out <- dplyr::left_join(daily, seasonal_cumsum, by = c("Date", "lat", "lon"))
+    out <- dplyr::left_join(
+      daily,
+      seasonal_cumsum,
+      by = c("Date", "lat", "lon")
+    )
 
     if (hemisphere == "sh") {
       out <- out |>
-        dplyr::left_join(date_lookup, by = c("Date" = "Date_shifted")) |>
+        dplyr::left_join(
+          date_lookup,
+          by = c("Date" = "Date_shifted")
+        ) |>
         dplyr::mutate(Date = Date_original) |>
         dplyr::select(-Date_original)
     }
@@ -2322,8 +2418,10 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
     if (missing_temp_summary$n_days_with_Tmax_or_Tmin_NA > 0) {
       message(
         missing_temp_summary$n_days_with_Tmax_or_Tmin_NA,
-        " days had NA in Tmax and/or Tmin for lon = ", lon_i,
-        ", lat = ", lat_i,
+        " days had NA in Tmax and/or Tmin for lon = ",
+        lon_i,
+        ", lat = ",
+        lat_i,
         ". Missing values were filled using nearest available values before computing temperature features."
       )
     }
@@ -2333,7 +2431,10 @@ weather_cumulative_temp_features_compute <- function(weather_data) {
       dplyr::arrange(Date)
   }
 
-  split(weather_data, interaction(weather_data$lon, weather_data$lat, drop = TRUE)) |>
+  split(
+    weather_data,
+    interaction(weather_data$lon, weather_data$lat, drop = TRUE)
+  ) |>
     lapply(compute_one_site) |>
     dplyr::bind_rows() |>
     dplyr::arrange(lon, lat, Date)
