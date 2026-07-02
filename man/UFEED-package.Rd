@@ -6,7 +6,7 @@
 \alias{UFEED-package}
 \title{Package imports}
 \description{
-Downloads weather and soil data and computes environmental feature sets for grapevine and crop modeling applications.
+Downloads weather and soil data and computes environmental feature sets for plant physiology modeling.
 }
 \author{
 \strong{Maintainer}: Hongrui Wang \email{hongrui.wang@inrae.fr}
