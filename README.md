@@ -12,8 +12,8 @@ UFEED can be used in two ways:
 
 <p align="center">
   <a href="#installation">Installation</a> •
-  <a href="#main-functions">Main functions</a> •
   <a href="#data-source-options">Data sources</a> •
+  <a href="#main-functions">Main functions</a> •
   <a href="#quick-start-historical-ufeed-table">Historical workflow</a> •
   <a href="#quick-start-present-season-ufeed-table">Present-season workflow</a> •
   <a href="#modular-workflow">Modular workflow</a> •
@@ -163,7 +163,7 @@ soil_features <- UFEED_get_soil_features(
 
 ---
 
-## Quick start: historical UFEED table
+## Quick start: historical UFEED dataframe
 
 ```r
 soil_dir <- "/path/to/soilgrids_1k"
@@ -194,7 +194,7 @@ ufeed_history <- UFEED_history(
 
 ---
 
-## Quick start: present-season UFEED table
+## Quick start: present season UFEED dataframe
 
 ```r
 soil_dir <- "/path/to/soilgrids_1k"
@@ -208,13 +208,13 @@ ufeed_present <- UFEED_present(
 )
 ```
 
-`UFEED_present()` uses a historical backbone plus recent/forecast Open-Meteo data. This allows the current dormant or growing season to be represented up to the forecast horizon.
+`UFEED_present()` uses a historical backbone plus recent/forecast Open-Meteo data.
 
 ---
 
 ## Modular workflow
 
-The modular workflow is useful when users want to inspect intermediate data, use their own weather station data, or customize the feature engineering settings.
+The modular workflow offers freedom and is useful when users want to inspect intermediate data, use their own weather station data, or customize the feature engineering settings.
 
 ### 1. Download historical weather
 
