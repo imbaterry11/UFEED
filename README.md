@@ -29,7 +29,7 @@ Then load the package:
 library(UFEED)
 ```
 
-Some optional workflows, especially those using Earth Engine through `weather_data_source = "power_ee"`, require a working `rgee`/Google Earth Engine configuration.
+Some optional workflows, especially those using Google Earth Engine through `weather_data_source = "power_ee"`, require a working [`rgee`](https://github.com/r-spatial/rgee) and Google Earth Engine configuration. Users who want to use this option should follow the installation, authentication, and configuration procedures described in the [`rgee` GitHub repository](https://github.com/r-spatial/rgee) before running UFEED functions with `weather_data_source = "power_ee"`.
 
 ---
 
@@ -502,57 +502,6 @@ ufeed_df <- UFEED_wrap_up(
   weather_features = weather_features,
   soil_features = soil_features
 )
-```
-
----
-
-## Testing during development
-
-From the package root:
-
-```r
-devtools::document()
-devtools::install()
-```
-
-Restart R, then run:
-
-```r
-library(UFEED)
-
-testthat::test_file("tests/testthat/test-compute-weather-features.R")
-```
-
-Or run the full package test suite:
-
-```r
-devtools::test()
-```
-
----
-
-## Development workflow
-
-After editing package code:
-
-```bash
-git status
-git diff --stat
-```
-
-Then in R:
-
-```r
-devtools::document()
-devtools::install()
-```
-
-After testing:
-
-```bash
-git add DESCRIPTION NAMESPACE R/ man/ tests/
-git commit -m "Describe the change"
-git push
 ```
 
 ---
