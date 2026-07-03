@@ -1,10 +1,10 @@
 # UFEED
 
-**UFEED** (*Universal Feature Extraction from Environmental Data*) is an R package for downloading, processing, and engineering environmental features for plant physiology and crop modeling. It was developed to support automated modeling workflows where physiological observations.
+**UFEED** (*Universal Feature Extraction from Environmental Data*) is an R package for downloading, processing, and engineering environmental features for plant physiology and crop modeling.
 
 UFEED can be used in two ways:
 
-1. **High-level workflow**: one function downloads weather, computes the standard UFEED feature set, extracts soil features, and returns a modelling-ready dataframe.
+1. **High-level workflow**: one function downloads weather, computes the standard UFEED feature set, extracts soil features, and returns a modeling-ready dataframe.
 2. **Modular workflow**: users can download weather, replace it with local weather station data, compute selected feature modules with custom parameters, extract soil features, and combine everything themselves.
 
 ![UFEED workflow](man/figures/FigureS1_UFEED_workflow.png)
@@ -50,7 +50,7 @@ Some optional workflows, especially those using Google Earth Engine through `wea
 
 ## Data source options
 
-UFEED separates weather data acquisition, weather feature computation, soil feature extraction, and final table assembly. This design allows users to run the default UFEED workflow or replace intermediate data with local measurements, such as data from an on-site weather station.
+UFEED separates weather data acquisition, weather feature computation, soil data acquisition, and final table assembly. This design allows users to run the default UFEED workflow or replace intermediate data with local measurements, such as data from an on-site weather station.
 
 ### Historical weather data options
 
@@ -59,7 +59,7 @@ Historical weather can be downloaded through `UFEED_history()` or `UFEED_downloa
 | `weather_data_source` | Main data source | How UFEED uses it | Main advantages | Main limitations | Setup required |
 |---|---|---|---|---|---|
 | `"power"` | [NASA POWER daily API](https://power.larc.nasa.gov/docs/services/api/temporal/daily/) | Uses NASA POWER directly for the requested daily variables. | Easiest option; no user account, API key, or external configuration; suitable for large batch runs; usually has very few practical access barriers for normal research workflows. | Coarser spatial resolution. NASA POWER data are provided at the native resolution of the underlying source products; many meteorological products are approximately 0.5° scale, and some radiation products are coarser. | None. This option can be used directly after installing UFEED. |
-| `"power_open_meteo"` | [NASA POWER](https://power.larc.nasa.gov/) + [Open-Meteo](https://open-meteo.com/) | Uses NASA POWER as the backbone, then replaces available variables with Open-Meteo/ERA5-derived variables where implemented in UFEED. | Higher spatial resolution than POWER-only for many variables; fast; no API key required for small non-commercial workflows; useful when ERA5-like spatial resolution is desired without Earth Engine setup. | The free Open-Meteo API is rate-limited. Open-Meteo currently describes the free non-commercial API as limited to 10,000 calls/day, 5,000 calls/hour, and 600 calls/minute, with paid options for commercial or larger-scale use. Check the [Open-Meteo terms](https://open-meteo.com/en/terms) and [pricing page](https://open-meteo.com/en/pricing) before large-scale runs. | None for normal free non-commercial use, but large jobs may need batching or a subscription. |
+| `"power_open_meteo"` | [NASA POWER](https://power.larc.nasa.gov/) + [Open-Meteo](https://open-meteo.com/) | Uses NASA POWER as the backbone, then replaces available variables with Open-Meteo/ERA5-derived variables where implemented in UFEED. | Higher spatial resolution than POWER-only for many variables; fast; no API key required for small non-commercial workflows; useful when ERA5-like spatial resolution is desired. | The free Open-Meteo API is rate-limited. Open-Meteo currently describes the free non-commercial API as limited to 10,000 calls/day, 5,000 calls/hour, and 600 calls/minute, with paid options for commercial or larger-scale use. Check the [Open-Meteo terms](https://open-meteo.com/en/terms) and [pricing page](https://open-meteo.com/en/pricing) before large-scale runs. | None for normal free non-commercial use, but large jobs may need batching or a subscription. |
 | `"power_ee"` | [NASA POWER](https://power.larc.nasa.gov/) + [Google Earth Engine](https://earthengine.google.com/) [ERA5-Land Daily Aggregated](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_DAILY_AGGR#bands) | Uses NASA POWER as the backbone, then replaces available parameters with ERA5-Land daily aggregated variables through Google Earth Engine where implemented in UFEED. | High-resolution ERA5-Land data through Earth Engine; suitable for large spatial workflows once configured; avoids many direct API-call constraints associated with repeatedly downloading ERA5 data through ordinary web APIs. | More complicated setup. Users must configure `rgee`, authenticate Google Earth Engine, and use a registered Google Cloud / Earth Engine project. Earth Engine also has quota systems, so users should check their project quota for very large workflows. | Required. Follow the [`rgee` repository](https://github.com/r-spatial/rgee), [Google Earth Engine access guide](https://developers.google.com/earth-engine/guides/access), and [Earth Engine quota guidance](https://developers.google.com/earth-engine/guides/usage). |
 
 A simple decision guide:
@@ -75,15 +75,9 @@ Need ERA5-Land through Earth Engine for larger spatial workflows?
   -> use weather_data_source = "power_ee"
 ```
 
-### Notes on `power_ee`
-
-The `power_ee` option requires a working [`rgee`](https://github.com/r-spatial/rgee) installation and Google Earth Engine authentication. Users also need access to a Google Cloud / Earth Engine project. Follow the setup, authentication, and troubleshooting instructions in the [`rgee` GitHub repository](https://github.com/r-spatial/rgee) before running UFEED functions with `weather_data_source = "power_ee"`.
-
-In UFEED, this option uses NASA POWER as the backbone and replaces available variables using the Earth Engine dataset [`ECMWF/ERA5_LAND/DAILY_AGGR`](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_DAILY_AGGR#bands). Users who need to inspect variable definitions should check the ERA5-Land Daily Aggregated dataset page, especially the band list.
-
 ### Present-season weather data options
 
-`UFEED_present()` and `UFEED_download_present_weather()` also use previous weather data to compute cumulative dormant-season and growing-season features. For Northern Hemisphere sites, the present-season workflow needs weather beginning from September 1 of the previous year so that dormant-season cumulative features can be computed. For Southern Hemisphere sites, UFEED uses the corresponding Southern Hemisphere seasonal logic.
+`UFEED_present()` and `UFEED_download_present_weather()` also use previous weather data to compute cumulative dormant season and growing season features. For Northern Hemisphere sites, the present-season workflow needs weather beginning from September 1 of the previous year. For Southern Hemisphere sites, UFEED uses the corresponding Southern Hemisphere seasonal logic.
 
 The `weather_data_source` argument is still available for the historical/backbone part of the present-season workflow:
 
@@ -91,7 +85,7 @@ The `weather_data_source` argument is still available for the historical/backbon
 weather_data_source = c("power", "power_ee", "power_open_meteo")
 ```
 
-However, very recent and forecast weather in the present-season workflow is handled with Open-Meteo by default. This allows UFEED to extend the current season through the recent/forecast horizon, while still using the selected historical backbone to compute cumulative features.
+However, very recent and forecast weather in the present-season workflow is handled with Open-Meteo by default.
 
 ### Soil data options
 
@@ -154,8 +148,8 @@ soil_features <- UFEED_get_soil_features(
 
 | Function | Purpose |
 |---|---|
-| `UFEED_history()` | Full historical workflow: download historical weather, compute standard UFEED features, extract soil features, and return one modelling table. |
-| `UFEED_present()` | Full present-season workflow: combine recent historical weather with Open-Meteo recent/forecast data, compute standard UFEED features, extract soil features, and return one modelling table. |
+| `UFEED_history()` | Full historical workflow: download historical weather, compute standard UFEED features, extract soil features, and return one modeling-ready dataframe. |
+| `UFEED_present()` | Full present-season workflow: combine recent historical weather with Open-Meteo recent/forecast data, compute standard UFEED features, extract soil features, and return one modeling-ready dataframe. |
 
 ### Modular workflow functions
 
@@ -163,9 +157,9 @@ soil_features <- UFEED_get_soil_features(
 |---|---|
 | `UFEED_download_history_weather()` | Download historical daily weather. |
 | `UFEED_download_present_weather()` | Download present-season weather. For Northern Hemisphere sites, this includes data starting from September 1 of the previous year so dormant-season cumulative features can be computed. |
-| `UFEED_compute_weather_features()` | Compute selected weather-derived feature modules from downloaded or user-supplied weather data. |
+| `UFEED_compute_weather_features()` | Compute selected derived feature modules from downloaded or user-supplied weather data. |
 | `UFEED_get_soil_features()` | Extract SoilGrids-derived static soil features. |
-| `UFEED_wrap_up()` | Join raw weather, computed weather features, and soil features into one UFEED modelling data frame. |
+| `UFEED_wrap_up()` | Join raw weather, computed weather features, and soil features into one UFEED modeling data frame. |
 
 ---
 
@@ -194,8 +188,7 @@ ufeed_history <- UFEED_history(
   start_year = 2023,
   end_year = 2024,
   weather_data_source = "power",
-  soil_data_source = "local",
-  soil_data_local_dir = soil_dir
+  soil_data_source = "remote"
 )
 ```
 
@@ -221,7 +214,7 @@ ufeed_present <- UFEED_present(
 
 ## Modular workflow
 
-The modular workflow is useful when users want to inspect intermediate data, use their own weather-station data, or customize the feature engineering settings.
+The modular workflow is useful when users want to inspect intermediate data, use their own weather station data, or customize the feature engineering settings.
 
 ### 1. Download historical weather
 
@@ -245,7 +238,7 @@ c("power", "power_ee", "power_open_meteo")
 - `"power_ee"`: NASA POWER plus Google Earth Engine / ERA5-Land-derived variables where used by the UFEED workflow.
 - `"power_open_meteo"`: NASA POWER plus Open-Meteo-derived variables where used by the UFEED workflow.
 
-### 2. Or use local weather-station data
+### 2. Or use local weather station data
 
 Users can bypass the download step and provide their own daily weather data. At minimum, all user-supplied weather data must include:
 
@@ -586,7 +579,7 @@ If `"cumulative_temp_features"` is selected and either `T2M_MAX` or `T2M_MIN` is
 
 ---
 
-## Example: using local weather-station data
+## Example: using local weather station data
 
 ```r
 local_weather <- readr::read_csv("my_station_weather.csv") |>
