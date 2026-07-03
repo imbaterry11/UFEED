@@ -4,8 +4,8 @@
 
 UFEED can be used in two ways:
 
-1. **High-level workflow**: one function downloads weather, computes the standard UFEED feature set, extracts soil features, and returns a modelling table.
-2. **Modular workflow**: users can download weather, replace it with local weather-station data, compute selected feature modules with custom parameters, extract soil features, and combine everything themselves.
+1. **High-level workflow**: one function downloads weather, computes the standard UFEED feature set, extracts soil features, and returns a modelling-ready dataframe.
+2. **Modular workflow**: users can download weather, replace it with local weather station data, compute selected feature modules with custom parameters, extract soil features, and combine everything themselves.
 
 ![UFEED workflow](man/figures/FigureS1_UFEED_workflow.png)
 
