@@ -1,6 +1,6 @@
 # UFEED
 
-**UFEED** (*Unified Feature Engineering for Environmental and Ecophysiological Data*) is an R package for downloading, processing, and engineering environmental covariates for plant physiology and crop modelling. It was developed to support automated modelling workflows where physiological observations, such as grapevine water potential, are combined with weather, soil, and management information.
+**UFEED** (*Universal Feature Extraction from Environmental Data*) is an R package for downloading, processing, and engineering environmental features for plant physiology and crop modeling. It was developed to support automated modeling workflows where physiological observations.
 
 UFEED can be used in two ways:
 
