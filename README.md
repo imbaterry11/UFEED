@@ -9,6 +9,20 @@ UFEED can be used in two ways:
 
 ![UFEED workflow](man/figures/FigureS1_UFEED_workflow.png)
 
+
+<p align="center">
+  <a href="#installation">Installation</a> •
+  <a href="#main-functions">Main functions</a> •
+  <a href="#data-source-options">Data sources</a> •
+  <a href="#quick-start-historical-ufeed-table">Historical workflow</a> •
+  <a href="#quick-start-present-season-ufeed-table">Present-season workflow</a> •
+  <a href="#modular-workflow">Modular workflow</a> •
+  <a href="#weather-feature-modules">Feature modules</a> •
+  <a href="#column-selection-rules">Column rules</a> •
+  <a href="#soil-data-options">Soil data</a> •
+  <a href="#citation">Citation</a>
+</p>
+
 ---
 
 ## Installation
@@ -33,19 +47,20 @@ Some optional workflows, especially those using Google Earth Engine through `wea
 
 ---
 
+
 ## Data source options
 
-UFEED separates weather data acquisition, weather feature computation, soil feature extraction, and final table assembly. This is useful because users can either run the default UFEED workflow or replace intermediate data with local measurements, such as data from a weather station.
+UFEED separates weather data acquisition, weather feature computation, soil feature extraction, and final table assembly. This design allows users to run the default UFEED workflow or replace intermediate data with local measurements, such as data from an on-site weather station.
 
-### Historical weather sources
+### Historical weather data options
 
 Historical weather can be downloaded through `UFEED_history()` or `UFEED_download_history_weather()` using the `weather_data_source` argument.
 
 | `weather_data_source` | Main data source | How UFEED uses it | Main advantages | Main limitations | Setup required |
 |---|---|---|---|---|---|
-| `"power"` | [NASA POWER daily API](https://power.larc.nasa.gov/docs/services/api/temporal/daily/) | Uses NASA POWER as the direct weather source for the requested daily variables. | Easiest option; no user account or API key; suitable for large batch downloads; generally few practical API-access barriers for normal research use. | Coarser spatial resolution. NASA POWER meteorology is commonly provided at approximately 0.5° × 0.625°, while solar parameters are commonly provided at approximately 1° × 1° resolution. See NASA POWER API guidance for details. | None. This option can be used directly after installing UFEED. |
-| `"power_open_meteo"` | [NASA POWER](https://power.larc.nasa.gov/) + [Open-Meteo](https://open-meteo.com/) | Uses NASA POWER as the backbone, then replaces available variables with Open-Meteo/ERA5-derived data where implemented in UFEED. | Higher spatial resolution than POWER-only for many variables; fast; no API key required for non-commercial use; useful when ERA5-like spatial resolution is desired without Earth Engine setup. | The free Open-Meteo API is rate-limited. Open-Meteo currently describes the free non-commercial API as limited to 10,000 calls/day, 5,000 calls/hour, and 600 calls/minute, with subscription options for higher/commercial use. Check the [Open-Meteo terms](https://open-meteo.com/en/terms) and [pricing page](https://open-meteo.com/en/pricing) before large-scale runs. | None for normal free non-commercial use, but large jobs may need batching or a subscription. |
-| `"power_ee"` | [NASA POWER](https://power.larc.nasa.gov/) + [Google Earth Engine](https://earthengine.google.com/) [ERA5-Land Daily Aggregated](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_DAILY_AGGR#bands) | Uses NASA POWER as the backbone, then replaces available parameters with ERA5-Land daily aggregated variables through Earth Engine where implemented in UFEED. | High-resolution ERA5-Land data through Google Earth Engine; suitable for large spatial workflows once configured; avoids many direct API call limitations associated with repeatedly downloading ERA5 data through ordinary web APIs. | More complicated setup. Users must configure `rgee`, authenticate Google Earth Engine, and use a registered Google Cloud / Earth Engine project. | Required. Follow the [`rgee` repository](https://github.com/r-spatial/rgee) and Google Earth Engine project setup guidance before using this option. |
+| `"power"` | [NASA POWER daily API](https://power.larc.nasa.gov/docs/services/api/temporal/daily/) | Uses NASA POWER directly for the requested daily variables. | Easiest option; no user account, API key, or external configuration; suitable for large batch runs; usually has very few practical access barriers for normal research workflows. | Coarser spatial resolution. NASA POWER data are provided at the native resolution of the underlying source products; many meteorological products are approximately 0.5° scale, and some radiation products are coarser. | None. This option can be used directly after installing UFEED. |
+| `"power_open_meteo"` | [NASA POWER](https://power.larc.nasa.gov/) + [Open-Meteo](https://open-meteo.com/) | Uses NASA POWER as the backbone, then replaces available variables with Open-Meteo/ERA5-derived variables where implemented in UFEED. | Higher spatial resolution than POWER-only for many variables; fast; no API key required for small non-commercial workflows; useful when ERA5-like spatial resolution is desired without Earth Engine setup. | The free Open-Meteo API is rate-limited. Open-Meteo currently describes the free non-commercial API as limited to 10,000 calls/day, 5,000 calls/hour, and 600 calls/minute, with paid options for commercial or larger-scale use. Check the [Open-Meteo terms](https://open-meteo.com/en/terms) and [pricing page](https://open-meteo.com/en/pricing) before large-scale runs. | None for normal free non-commercial use, but large jobs may need batching or a subscription. |
+| `"power_ee"` | [NASA POWER](https://power.larc.nasa.gov/) + [Google Earth Engine](https://earthengine.google.com/) [ERA5-Land Daily Aggregated](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_DAILY_AGGR#bands) | Uses NASA POWER as the backbone, then replaces available parameters with ERA5-Land daily aggregated variables through Google Earth Engine where implemented in UFEED. | High-resolution ERA5-Land data through Earth Engine; suitable for large spatial workflows once configured; avoids many direct API-call constraints associated with repeatedly downloading ERA5 data through ordinary web APIs. | More complicated setup. Users must configure `rgee`, authenticate Google Earth Engine, and use a registered Google Cloud / Earth Engine project. Earth Engine also has quota systems, so users should check their project quota for very large workflows. | Required. Follow the [`rgee` repository](https://github.com/r-spatial/rgee), [Google Earth Engine access guide](https://developers.google.com/earth-engine/guides/access), and [Earth Engine quota guidance](https://developers.google.com/earth-engine/guides/usage). |
 
 A simple decision guide:
 
@@ -62,11 +77,11 @@ Need ERA5-Land through Earth Engine for larger spatial workflows?
 
 ### Notes on `power_ee`
 
-The `power_ee` option requires a working [`rgee`](https://github.com/r-spatial/rgee) installation and Google Earth Engine authentication. Users also need access to a Google Cloud / Earth Engine project. The `rgee` repository notes that a Cloud project needs to be created and registered for Earth Engine use, and that the project ID is supplied when initializing Earth Engine sessions. Follow the setup, authentication, and troubleshooting instructions in the [`rgee` GitHub repository](https://github.com/r-spatial/rgee) and the [Google Earth Engine access guide](https://developers.google.com/earth-engine/guides/access).
+The `power_ee` option requires a working [`rgee`](https://github.com/r-spatial/rgee) installation and Google Earth Engine authentication. Users also need access to a Google Cloud / Earth Engine project. Follow the setup, authentication, and troubleshooting instructions in the [`rgee` GitHub repository](https://github.com/r-spatial/rgee) before running UFEED functions with `weather_data_source = "power_ee"`.
 
 In UFEED, this option uses NASA POWER as the backbone and replaces available variables using the Earth Engine dataset [`ECMWF/ERA5_LAND/DAILY_AGGR`](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_DAILY_AGGR#bands). Users who need to inspect variable definitions should check the ERA5-Land Daily Aggregated dataset page, especially the band list.
 
-### Present-season weather sources
+### Present-season weather data options
 
 `UFEED_present()` and `UFEED_download_present_weather()` also use previous weather data to compute cumulative dormant-season and growing-season features. For Northern Hemisphere sites, the present-season workflow needs weather beginning from September 1 of the previous year so that dormant-season cumulative features can be computed. For Southern Hemisphere sites, UFEED uses the corresponding Southern Hemisphere seasonal logic.
 
@@ -78,7 +93,7 @@ weather_data_source = c("power", "power_ee", "power_open_meteo")
 
 However, very recent and forecast weather in the present-season workflow is handled with Open-Meteo by default. This allows UFEED to extend the current season through the recent/forecast horizon, while still using the selected historical backbone to compute cumulative features.
 
-### Soil data sources
+### Soil data options
 
 Static soil features are extracted from [SoilGrids](https://isric.org/explore/soilgrids). In UFEED, the `soil_data_source` argument controls whether these rasters are accessed from local files or remotely.
 
@@ -87,32 +102,27 @@ Static soil features are extracted from [SoilGrids](https://isric.org/explore/so
 | `"local"` | Reads SoilGrids `.tif` files from a local folder. | Best option when extracting static soil properties for many sites or repeated analyses. | Much faster for many lon/lat combinations; avoids repeated remote file access; more reproducible once files are downloaded. | Requires users to download and store the required SoilGrids files first. |
 | `"remote"` | Accesses SoilGrids files remotely. | Convenient for small jobs or quick testing. | No local SoilGrids folder required. | Slower than local access; more sensitive to network/server availability; large repeated jobs may be inefficient. |
 
-For `soil_data_source = "local"`, the local folder should contain the relevant SoilGrids `.tif` files for each static soil-property category used by UFEED. The 1 km aggregated SoilGrids files are available from the ISRIC SoilGrids WebDAV directory:
-
-<https://files.isric.org/soilgrids/latest/data_aggregated/1000m/>
-
-See also the ISRIC SoilGrids WebDAV documentation:
-
-<https://docs.isric.org/globaldata/soilgrids/WebDav.html>
+For `soil_data_source = "local"`, the local folder should contain the required SoilGrids `.tif` files directly in one folder. The files should **not** be organized into variable-specific subfolders. The 1 km aggregated SoilGrids files are available from the [ISRIC SoilGrids WebDAV 1000 m directory](https://files.isric.org/soilgrids/latest/data_aggregated/1000m/). See also the [ISRIC SoilGrids access documentation](https://docs.isric.org/globaldata/soilgrids/).
 
 A typical local-soil setup looks like this:
 
 ```text
 soilgrids_1k/
-  bdod/
-  cec/
-  cfvo/
-  clay/
-  nitrogen/
-  ocd/
-  phh2o/
-  sand/
-  silt/
-  soc/
-  ocs/
-  wv0010/
-  wv0033/
-  wv1500/
+  bdod_0-5cm_mean_1000.tif
+  bdod_5-15cm_mean_1000.tif
+  bdod_15-30cm_mean_1000.tif
+  bdod_30-60cm_mean_1000.tif
+  bdod_60-100cm_mean_1000.tif
+  bdod_100-200cm_mean_1000.tif
+  cec_0-5cm_mean_1000.tif
+  cec_5-15cm_mean_1000.tif
+  ...
+  wv1500_0-5cm_mean_1000.tif
+  wv1500_5-15cm_mean_1000.tif
+  wv1500_15-30cm_mean_1000.tif
+  wv1500_30-60cm_mean_1000.tif
+  wv1500_60-100cm_mean_1000.tif
+  wv1500_100-200cm_mean_1000.tif
 ```
 
 Then use:
@@ -135,7 +145,6 @@ soil_features <- UFEED_get_soil_features(
   soil_data_source = "remote"
 )
 ```
-
 
 ---
 
