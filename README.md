@@ -12,10 +12,10 @@ UFEED can be used in two ways:
 
 <p align="center">
   <a href="#installation">Installation</a> •
-  <a href="#data-source-options">Data sources</a> •
   <a href="#main-functions">Main functions</a> •
-  <a href="#quick-start-historical-ufeed-table">Historical workflow</a> •
-  <a href="#quick-start-present-season-ufeed-table">Present-season workflow</a> •
+  <a href="#data-source-options">Data sources</a> •
+  <a href="#quick-start-historical-ufeed-dataframe">Historical workflow</a> •
+  <a href="#quick-start-present-season-ufeed-dataframe">Present season workflow</a> •
   <a href="#modular-workflow">Modular workflow</a> •
   <a href="#weather-feature-modules">Feature modules</a> •
   <a href="#column-selection-rules">Column rules</a> •
@@ -47,6 +47,26 @@ Some optional workflows, especially those using Google Earth Engine through `wea
 
 ---
 
+## Main functions
+
+### High-level wrappers
+
+| Function | Purpose |
+|---|---|
+| `UFEED_history()` | Full historical workflow: download historical weather, compute standard UFEED features, extract soil features, and return one modeling-ready dataframe. |
+| `UFEED_present()` | Full present-season workflow: combine recent historical weather with Open-Meteo recent/forecast data, compute standard UFEED features, extract soil features, and return one modeling-ready dataframe. |
+
+### Modular workflow functions
+
+| Function | Purpose |
+|---|---|
+| `UFEED_download_history_weather()` | Download historical daily weather. |
+| `UFEED_download_present_weather()` | Download present-season weather. For Northern Hemisphere sites, this includes data starting from September 1 of the previous year so dormant-season cumulative features can be computed. |
+| `UFEED_compute_weather_features()` | Compute selected derived feature modules from downloaded or user-supplied weather data. |
+| `UFEED_get_soil_features()` | Extract SoilGrids-derived static soil features. |
+| `UFEED_wrap_up()` | Join raw weather, computed weather features, and soil features into one UFEED modeling data frame. |
+
+---
 
 ## Data source options
 
@@ -142,26 +162,6 @@ soil_features <- UFEED_get_soil_features(
 
 ---
 
-## Main functions
-
-### High-level wrappers
-
-| Function | Purpose |
-|---|---|
-| `UFEED_history()` | Full historical workflow: download historical weather, compute standard UFEED features, extract soil features, and return one modeling-ready dataframe. |
-| `UFEED_present()` | Full present-season workflow: combine recent historical weather with Open-Meteo recent/forecast data, compute standard UFEED features, extract soil features, and return one modeling-ready dataframe. |
-
-### Modular workflow functions
-
-| Function | Purpose |
-|---|---|
-| `UFEED_download_history_weather()` | Download historical daily weather. |
-| `UFEED_download_present_weather()` | Download present-season weather. For Northern Hemisphere sites, this includes data starting from September 1 of the previous year so dormant-season cumulative features can be computed. |
-| `UFEED_compute_weather_features()` | Compute selected derived feature modules from downloaded or user-supplied weather data. |
-| `UFEED_get_soil_features()` | Extract SoilGrids-derived static soil features. |
-| `UFEED_wrap_up()` | Join raw weather, computed weather features, and soil features into one UFEED modeling data frame. |
-
----
 
 ## Quick start: historical UFEED dataframe
 
