@@ -1,11 +1,11 @@
 # UFEED
 
-**UFEED** (*Unified Feature Engineering for Environmental and Ecophysiological Data*) is an R package for downloading, processing, and engineering environmental covariates for plant physiology and crop modelling. It was developed to support automated modelling workflows where physiological observations, such as grapevine water potential, are combined with weather, soil, and management information.
+**UFEED** (*Universal Feature Extraction from Environmental Data*) is an R package for downloading, processing, and engineering environmental features for plant physiology and crop modeling. It was developed to support automated modeling workflows where physiological observations.
 
 UFEED can be used in two ways:
 
-1. **High-level workflow**: one function downloads weather, computes the standard UFEED feature set, extracts soil features, and returns a modelling table.
-2. **Modular workflow**: users can download weather, replace it with local weather-station data, compute selected feature modules with custom parameters, extract soil features, and combine everything themselves.
+1. **High-level workflow**: one function downloads weather, computes the standard UFEED feature set, extracts soil features, and returns a modelling-ready dataframe.
+2. **Modular workflow**: users can download weather, replace it with local weather station data, compute selected feature modules with custom parameters, extract soil features, and combine everything themselves.
 
 ![UFEED workflow](man/figures/FigureS1_UFEED_workflow.png)
 
@@ -29,7 +29,113 @@ Then load the package:
 library(UFEED)
 ```
 
-Some optional workflows, especially those using Earth Engine through `weather_data_source = "power_ee"`, require a working `rgee`/Google Earth Engine configuration.
+Some optional workflows, especially those using Google Earth Engine through `weather_data_source = "power_ee"`, require a working [`rgee`](https://github.com/r-spatial/rgee) and Google Earth Engine configuration. Users who want to use this option should follow the installation, authentication, and configuration procedures described in the [`rgee` GitHub repository](https://github.com/r-spatial/rgee) before running UFEED functions with `weather_data_source = "power_ee"`.
+
+---
+
+## Data source options
+
+UFEED separates weather data acquisition, weather feature computation, soil feature extraction, and final table assembly. This is useful because users can either run the default UFEED workflow or replace intermediate data with local measurements, such as data from a weather station.
+
+### Historical weather sources
+
+Historical weather can be downloaded through `UFEED_history()` or `UFEED_download_history_weather()` using the `weather_data_source` argument.
+
+| `weather_data_source` | Main data source | How UFEED uses it | Main advantages | Main limitations | Setup required |
+|---|---|---|---|---|---|
+| `"power"` | [NASA POWER daily API](https://power.larc.nasa.gov/docs/services/api/temporal/daily/) | Uses NASA POWER as the direct weather source for the requested daily variables. | Easiest option; no user account or API key; suitable for large batch downloads; generally few practical API-access barriers for normal research use. | Coarser spatial resolution. NASA POWER meteorology is commonly provided at approximately 0.5° × 0.625°, while solar parameters are commonly provided at approximately 1° × 1° resolution. See NASA POWER API guidance for details. | None. This option can be used directly after installing UFEED. |
+| `"power_open_meteo"` | [NASA POWER](https://power.larc.nasa.gov/) + [Open-Meteo](https://open-meteo.com/) | Uses NASA POWER as the backbone, then replaces available variables with Open-Meteo/ERA5-derived data where implemented in UFEED. | Higher spatial resolution than POWER-only for many variables; fast; no API key required for non-commercial use; useful when ERA5-like spatial resolution is desired without Earth Engine setup. | The free Open-Meteo API is rate-limited. Open-Meteo currently describes the free non-commercial API as limited to 10,000 calls/day, 5,000 calls/hour, and 600 calls/minute, with subscription options for higher/commercial use. Check the [Open-Meteo terms](https://open-meteo.com/en/terms) and [pricing page](https://open-meteo.com/en/pricing) before large-scale runs. | None for normal free non-commercial use, but large jobs may need batching or a subscription. |
+| `"power_ee"` | [NASA POWER](https://power.larc.nasa.gov/) + [Google Earth Engine](https://earthengine.google.com/) [ERA5-Land Daily Aggregated](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_DAILY_AGGR#bands) | Uses NASA POWER as the backbone, then replaces available parameters with ERA5-Land daily aggregated variables through Earth Engine where implemented in UFEED. | High-resolution ERA5-Land data through Google Earth Engine; suitable for large spatial workflows once configured; avoids many direct API call limitations associated with repeatedly downloading ERA5 data through ordinary web APIs. | More complicated setup. Users must configure `rgee`, authenticate Google Earth Engine, and use a registered Google Cloud / Earth Engine project. | Required. Follow the [`rgee` repository](https://github.com/r-spatial/rgee) and Google Earth Engine project setup guidance before using this option. |
+
+A simple decision guide:
+
+```text
+Need the easiest setup and broad compatibility?
+  -> use weather_data_source = "power"
+
+Need better spatial resolution without Earth Engine setup?
+  -> use weather_data_source = "power_open_meteo"
+
+Need ERA5-Land through Earth Engine for larger spatial workflows?
+  -> use weather_data_source = "power_ee"
+```
+
+### Notes on `power_ee`
+
+The `power_ee` option requires a working [`rgee`](https://github.com/r-spatial/rgee) installation and Google Earth Engine authentication. Users also need access to a Google Cloud / Earth Engine project. The `rgee` repository notes that a Cloud project needs to be created and registered for Earth Engine use, and that the project ID is supplied when initializing Earth Engine sessions. Follow the setup, authentication, and troubleshooting instructions in the [`rgee` GitHub repository](https://github.com/r-spatial/rgee) and the [Google Earth Engine access guide](https://developers.google.com/earth-engine/guides/access).
+
+In UFEED, this option uses NASA POWER as the backbone and replaces available variables using the Earth Engine dataset [`ECMWF/ERA5_LAND/DAILY_AGGR`](https://developers.google.com/earth-engine/datasets/catalog/ECMWF_ERA5_LAND_DAILY_AGGR#bands). Users who need to inspect variable definitions should check the ERA5-Land Daily Aggregated dataset page, especially the band list.
+
+### Present-season weather sources
+
+`UFEED_present()` and `UFEED_download_present_weather()` also use previous weather data to compute cumulative dormant-season and growing-season features. For Northern Hemisphere sites, the present-season workflow needs weather beginning from September 1 of the previous year so that dormant-season cumulative features can be computed. For Southern Hemisphere sites, UFEED uses the corresponding Southern Hemisphere seasonal logic.
+
+The `weather_data_source` argument is still available for the historical/backbone part of the present-season workflow:
+
+```r
+weather_data_source = c("power", "power_ee", "power_open_meteo")
+```
+
+However, very recent and forecast weather in the present-season workflow is handled with Open-Meteo by default. This allows UFEED to extend the current season through the recent/forecast horizon, while still using the selected historical backbone to compute cumulative features.
+
+### Soil data sources
+
+Static soil features are extracted from [SoilGrids](https://isric.org/explore/soilgrids). In UFEED, the `soil_data_source` argument controls whether these rasters are accessed from local files or remotely.
+
+| `soil_data_source` | Data access mode | Recommended use | Advantages | Limitations |
+|---|---|---|---|---|
+| `"local"` | Reads SoilGrids `.tif` files from a local folder. | Best option when extracting static soil properties for many sites or repeated analyses. | Much faster for many lon/lat combinations; avoids repeated remote file access; more reproducible once files are downloaded. | Requires users to download and store the required SoilGrids files first. |
+| `"remote"` | Accesses SoilGrids files remotely. | Convenient for small jobs or quick testing. | No local SoilGrids folder required. | Slower than local access; more sensitive to network/server availability; large repeated jobs may be inefficient. |
+
+For `soil_data_source = "local"`, the local folder should contain the relevant SoilGrids `.tif` files for each static soil-property category used by UFEED. The 1 km aggregated SoilGrids files are available from the ISRIC SoilGrids WebDAV directory:
+
+<https://files.isric.org/soilgrids/latest/data_aggregated/1000m/>
+
+See also the ISRIC SoilGrids WebDAV documentation:
+
+<https://docs.isric.org/globaldata/soilgrids/WebDav.html>
+
+A typical local-soil setup looks like this:
+
+```text
+soilgrids_1k/
+  bdod/
+  cec/
+  cfvo/
+  clay/
+  nitrogen/
+  ocd/
+  phh2o/
+  sand/
+  silt/
+  soc/
+  ocs/
+  wv0010/
+  wv0033/
+  wv1500/
+```
+
+Then use:
+
+```r
+soil_features <- UFEED_get_soil_features(
+  lon = 7.155,
+  lat = 46.16,
+  soil_data_source = "local",
+  soil_data_local_dir = "/path/to/soilgrids_1k"
+)
+```
+
+For small tests where no local SoilGrids folder has been prepared, use:
+
+```r
+soil_features <- UFEED_get_soil_features(
+  lon = 7.155,
+  lat = 46.16,
+  soil_data_source = "remote"
+)
+```
+
 
 ---
 
@@ -502,57 +608,6 @@ ufeed_df <- UFEED_wrap_up(
   weather_features = weather_features,
   soil_features = soil_features
 )
-```
-
----
-
-## Testing during development
-
-From the package root:
-
-```r
-devtools::document()
-devtools::install()
-```
-
-Restart R, then run:
-
-```r
-library(UFEED)
-
-testthat::test_file("tests/testthat/test-compute-weather-features.R")
-```
-
-Or run the full package test suite:
-
-```r
-devtools::test()
-```
-
----
-
-## Development workflow
-
-After editing package code:
-
-```bash
-git status
-git diff --stat
-```
-
-Then in R:
-
-```r
-devtools::document()
-devtools::install()
-```
-
-After testing:
-
-```bash
-git add DESCRIPTION NAMESPACE R/ man/ tests/
-git commit -m "Describe the change"
-git push
 ```
 
 ---
