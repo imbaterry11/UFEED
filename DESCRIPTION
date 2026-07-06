@@ -27,7 +27,6 @@ Imports:
     terra,
     rgee,
     reticulate,
-    openmeteo,
     soilDB,
     stringr,
     fruclimadapt
