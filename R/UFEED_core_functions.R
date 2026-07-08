@@ -1004,6 +1004,10 @@ UFEED_download_present_weather <- function(
 #'   allowed because a one-day EWMA/REWMA window does not provide smoothing.
 #' @param ewma_rewma_max_missing_prop Numeric between 0 and 1. Maximum
 #'   missing-data proportion allowed inside each EWMA/REWMA window.
+#' @param ewma_rewma_require_full_window Logical. If `TRUE`, EWMA/REWMA
+#'   features are returned only when the full requested backward-looking window
+#'   is available. This avoids early rows where `*_EWMA_90` or `*_REWMA_90`
+#'   would otherwise be computed from fewer than 90 days.
 #' @param cumulative_temp_rollsum_windows Integer vector. Rolling-sum windows
 #'   for cumulative temperature features. The UFEED default is
 #'   `c(3, 7, 14, 30, 60, 90)`. Users may provide any positive-integer vector;
@@ -1086,6 +1090,7 @@ UFEED_compute_weather_features <- function(
     cumsum_max_missing_prop = 0.10,
     ewma_rewma_windows = c(2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90),
     ewma_rewma_max_missing_prop = 0.5,
+    ewma_rewma_require_full_window = TRUE,
     cumulative_temp_rollsum_windows = c(3, 7, 14, 30, 60, 90),
     cumulative_temp_chilling_models = c("CU", "Utah", "NC", "DP"),
     cumulative_temp_gdh_bases = c(10, 7, 4, 0),
@@ -1248,7 +1253,8 @@ UFEED_compute_weather_features <- function(
         weather_data,
         columns_for_EWMA_REWMA = ewma_rewma_cols,
         EWMA_REWMA_windows = ewma_rewma_windows,
-        max_missing_prop = ewma_rewma_max_missing_prop
+        max_missing_prop = ewma_rewma_max_missing_prop,
+        require_full_window = ewma_rewma_require_full_window
       )
       if ("EWMA_REWMA_features" %in% included_module) {
         feature_df <- UFEED_safe_left_join_features(feature_df, weather_data_EWMA_REWMA)
@@ -2852,7 +2858,8 @@ get_weather_data_power_ee <- function(
     weather_data,
     columns_for_EWMA_REWMA = UFEED_EWMA_REWMA_COLS_HISTORY,
     EWMA_REWMA_windows = c(2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90),
-    max_missing_prop = 0.5
+    max_missing_prop = 0.5,
+    require_full_window = TRUE
 ) {
   UFEED_check_required_packages(c("dplyr"))
 
@@ -2862,53 +2869,118 @@ get_weather_data_power_ee <- function(
     stop("Missing columns for EWMA/REWMA features: ", paste(missing_cols, collapse = ", "), call. = FALSE)
   }
 
-  ewma_skipna_window <- function(x, window, max_missing_prop = 0.5) {
+  # EWMA and REWMA are both backward-looking.
+  # For a row at day i and window = 90, both functions use days i-89 ... i.
+  # EWMA gives the largest weight to the current/recent day.
+  # REWMA gives the largest weight to the oldest day in that same backward window.
+  # With require_full_window = TRUE, *_EWMA_90 and *_REWMA_90 are only returned
+  # when a full 90-day historical window is available.
+
+  ewma_skipna_window <- function(
+    x,
+    window,
+    max_missing_prop = 0.5,
+    require_full_window = TRUE
+  ) {
     x <- as.numeric(x)
     x[!is.finite(x)] <- NA_real_
+
     L <- length(x)
     out <- rep(NA_real_, L)
     if (L == 0L) return(out)
 
+    alpha <- 2 / (window + 1)
+
     for (i in seq_len(L)) {
-      start_i <- max(1L, i - window + 1L)
-      x_window <- x[start_i:i]
+      start_i <- i - window + 1L
+      end_i <- i
+
+      if (isTRUE(require_full_window) && start_i < 1L) {
+        out[i] <- NA_real_
+        next
+      }
+
+      start_i <- max(1L, start_i)
+      x_window <- x[start_i:end_i]
+
       missing_prop <- mean(is.na(x_window))
-      if (missing_prop > max_missing_prop) next
+      if (missing_prop > max_missing_prop) {
+        out[i] <- NA_real_
+        next
+      }
 
       valid_idx <- !is.na(x_window)
-      if (!any(valid_idx)) next
+      if (!any(valid_idx)) {
+        out[i] <- NA_real_
+        next
+      }
 
       n_window <- length(x_window)
-      alpha <- 2 / (n_window + 1)
+
+      # x_window is ordered oldest -> newest.
+      # EWMA: oldest gets smallest weight; current/newest gets largest weight.
       weights <- (1 - alpha)^((n_window - 1):0)
-      weights <- weights[valid_idx] / sum(weights[valid_idx])
-      out[i] <- sum(x_window[valid_idx] * weights)
+
+      w_valid <- weights[valid_idx]
+      w_valid <- w_valid / sum(w_valid)
+
+      out[i] <- sum(x_window[valid_idx] * w_valid)
     }
+
     out
   }
 
-  rewma_skipna_window <- function(x, window, max_missing_prop = 0.5) {
+  rewma_skipna_window <- function(
+    x,
+    window,
+    max_missing_prop = 0.5,
+    require_full_window = TRUE
+  ) {
     x <- as.numeric(x)
     x[!is.finite(x)] <- NA_real_
+
     L <- length(x)
     out <- rep(NA_real_, L)
     if (L == 0L) return(out)
 
+    alpha <- 2 / (window + 1)
+
     for (i in seq_len(L)) {
-      end_i <- min(L, i + window - 1L)
-      x_window <- x[i:end_i]
+      start_i <- i - window + 1L
+      end_i <- i
+
+      if (isTRUE(require_full_window) && start_i < 1L) {
+        out[i] <- NA_real_
+        next
+      }
+
+      start_i <- max(1L, start_i)
+      x_window <- x[start_i:end_i]
+
       missing_prop <- mean(is.na(x_window))
-      if (missing_prop > max_missing_prop) next
+      if (missing_prop > max_missing_prop) {
+        out[i] <- NA_real_
+        next
+      }
 
       valid_idx <- !is.na(x_window)
-      if (!any(valid_idx)) next
+      if (!any(valid_idx)) {
+        out[i] <- NA_real_
+        next
+      }
 
       n_window <- length(x_window)
-      alpha <- 2 / (n_window + 1)
+
+      # x_window is ordered oldest -> newest.
+      # REWMA: oldest gets largest weight; current/newest gets smallest weight.
       weights <- (1 - alpha)^(0:(n_window - 1))
-      weights <- weights[valid_idx] / sum(weights[valid_idx])
-      out[i] <- sum(x_window[valid_idx] * weights)
+
+      w_valid <- weights[valid_idx]
+      w_valid <- w_valid / sum(w_valid)
+
+      out[i] <- sum(x_window[valid_idx] * w_valid)
     }
+
     out
   }
 
@@ -2927,10 +2999,22 @@ get_weather_data_power_ee <- function(
 
     for (col in columns_for_EWMA_REWMA) {
       for (window in EWMA_REWMA_windows) {
-        out[[paste0(col, "_EWMA_", window)]] <- ewma_skipna_window(dat[[col]], window, max_missing_prop)
-        out[[paste0(col, "_REWMA_", window)]] <- rewma_skipna_window(dat[[col]], window, max_missing_prop)
+        out[[paste0(col, "_EWMA_", window)]] <- ewma_skipna_window(
+          x = dat[[col]],
+          window = window,
+          max_missing_prop = max_missing_prop,
+          require_full_window = require_full_window
+        )
+
+        out[[paste0(col, "_REWMA_", window)]] <- rewma_skipna_window(
+          x = dat[[col]],
+          window = window,
+          max_missing_prop = max_missing_prop,
+          require_full_window = require_full_window
+        )
       }
     }
+
     out
   }
 
