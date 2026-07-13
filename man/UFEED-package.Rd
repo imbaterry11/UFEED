@@ -12,10 +12,5 @@ Downloads weather and soil data and computes environmental features for plant ph
 \author{
 \strong{Maintainer}: Hongrui Wang \email{hongrui.wang@inrae.fr}
 
-Authors:
-\itemize{
-  \item Hongrui Wang \email{hongrui.wang@inrae.fr}
-}
-
 }
 \keyword{internal}

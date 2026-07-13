@@ -4,6 +4,8 @@ Title: Universal Feature Extraction from Environmental Data (UFEED)
 Version: 0.1.0
 Authors@R: 
     person("Hongrui", "Wang", email = "hongrui.wang@inrae.fr", role = c("aut", "cre"))
+Author: Hongrui Wang [aut, cre]
+Maintainer: Hongrui Wang <hongrui.wang@inrae.fr>
 Description: Downloads weather and soil data and computes environmental features for plant physiology modeling.
 License: MIT + file LICENSE
 Encoding: UTF-8
@@ -29,10 +31,12 @@ Imports:
     reticulate,
     soilDB,
     stringr,
-    fruclimadapt
+    fruclimadapt,
+    bigleaf
 Remotes:
     EduardoFernandezC/dormancyR
 Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0
+RoxygenNote: 7.3.2

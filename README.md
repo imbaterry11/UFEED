@@ -355,6 +355,31 @@ weather_features <- UFEED_compute_weather_features(
 )
 ```
 
+### Optional expansion modules
+
+Completed UFEED tables can be expanded with additional post-processing modules
+without changing the weather download, soil extraction, or core feature engine.
+
+```r
+ufeed_present <- UFEED_present(
+  lon = 7.155,
+  lat = 46.16,
+  weather_data_source = "power",
+  soil_data_source = "remote"
+)
+
+ufeed_expanded <- UFEED_expand_features(
+  ufeed_present,
+  included_module = "atmospheric_demand"
+)
+```
+
+The first expansion module, `"atmospheric_demand"`, adds saturation vapor
+pressure, actual vapor pressure, vapor pressure deficit, specific humidity, and
+wind-scaled VPD features using the `bigleaf` package. Dew point temperature is
+used preferentially for actual vapor pressure; relative humidity is used as a
+row-level fallback when dew point is missing.
+
 ---
 
 ## Column-selection rules

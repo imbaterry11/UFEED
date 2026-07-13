@@ -14,6 +14,7 @@ UFEED_compute_weather_features(
   cumsum_max_missing_prop = 0.1,
   ewma_rewma_windows = c(2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90),
   ewma_rewma_max_missing_prop = 0.5,
+  ewma_rewma_require_full_window = TRUE,
   cumulative_temp_rollsum_windows = c(3, 7, 14, 30, 60, 90),
   cumulative_temp_chilling_models = c("CU", "Utah", "NC", "DP"),
   cumulative_temp_gdh_bases = c(10, 7, 4, 0),
@@ -84,6 +85,11 @@ allowed because a one-day EWMA/REWMA window does not provide smoothing.}
 
 \item{ewma_rewma_max_missing_prop}{Numeric between 0 and 1. Maximum
 missing-data proportion allowed inside each EWMA/REWMA window.}
+
+\item{ewma_rewma_require_full_window}{Logical. If \code{TRUE}, EWMA/REWMA
+features are returned only when the full requested backward-looking window
+is available. This avoids early rows where \verb{*_EWMA_90} or \verb{*_REWMA_90}
+would otherwise be computed from fewer than 90 days.}
 
 \item{cumulative_temp_rollsum_windows}{Integer vector. Rolling-sum windows
 for cumulative temperature features. The UFEED default is
