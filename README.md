@@ -370,15 +370,21 @@ ufeed_present <- UFEED_present(
 
 ufeed_expanded <- UFEED_expand_features(
   ufeed_present,
-  included_module = "atmospheric_demand"
+  included_module = c("atmospheric_demand", "surface_energy_radiation")
 )
 ```
 
-The first expansion module, `"atmospheric_demand"`, adds saturation vapor
-pressure, actual vapor pressure, vapor pressure deficit, specific humidity, and
-wind-scaled VPD features using the `bigleaf` package. Dew point temperature is
-used preferentially for actual vapor pressure; relative humidity is used as a
+The `"atmospheric_demand"` module adds saturation vapor pressure, actual vapor
+pressure, vapor pressure deficit, specific humidity, and wind-scaled VPD
+features using the `bigleaf` package. Dew point temperature is used
+preferentially for actual vapor pressure; relative humidity is used as a
 row-level fallback when dew point is missing.
+
+The `"surface_energy_radiation"` module adds daylength, extraterrestrial
+radiation, clear-sky radiation, clearness index, net shortwave radiation, net
+longwave radiation, net radiation, and an independent FAO-56 reference ET0
+estimate. The ET0 output is named `ET0_FAO56_INDEPENDENT` so it is not confused
+with the raw `EVPTRNS` column, whose meaning depends on the weather source.
 
 ---
 

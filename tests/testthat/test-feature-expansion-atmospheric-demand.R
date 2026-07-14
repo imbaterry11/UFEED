@@ -94,6 +94,39 @@ test_that("specific humidity requires valid pressure", {
   expect_true(is.na(output$SPECIFIC_HUMIDITY[2]))
 })
 
+test_that("atmospheric demand matches independent Allen-style equations", {
+  input <- data.frame(
+    T2M = 25,
+    T2M_MAX = 31,
+    T2M_MIN = 18,
+    T2MDEW = 14,
+    RH2M = 99,
+    PS = 100,
+    WS2M = 2.5
+  )
+
+  output <- UFEED_compute_atmospheric_demand_features(input)
+
+  manual_esat <- function(temperature) {
+    0.6108 * exp((17.27 * temperature) / (temperature + 237.3))
+  }
+
+  expected_esat <- manual_esat(input$T2M)
+  expected_ea <- manual_esat(input$T2MDEW)
+  expected_vpd <- expected_esat - expected_ea
+  expected_specific_humidity <- 0.622 * expected_ea /
+    (input$PS - 0.378 * expected_ea)
+
+  expect_equal(output$ESAT_T2M, expected_esat, tolerance = 1e-3)
+  expect_equal(output$EA, expected_ea, tolerance = 1e-3)
+  expect_equal(output$VPD, expected_vpd, tolerance = 1e-3)
+  expect_equal(output$VPD_MAX_PROXY, manual_esat(input$T2M_MAX) - expected_ea, tolerance = 1e-3)
+  expect_equal(output$VPD_MIN_PROXY, manual_esat(input$T2M_MIN) - expected_ea, tolerance = 1e-3)
+  expect_equal(output$DEWPOINT_DEPRESSION, input$T2M - input$T2MDEW)
+  expect_equal(output$SPECIFIC_HUMIDITY, expected_specific_humidity, tolerance = 1e-6)
+  expect_equal(output$VPD_WIND, expected_vpd * input$WS2M, tolerance = 1e-3)
+})
+
 test_that("invalid expansion modules and missing humidity inputs error clearly", {
   expect_error(
     UFEED_expand_features(data.frame(T2M = 20), included_module = "bad_module"),
