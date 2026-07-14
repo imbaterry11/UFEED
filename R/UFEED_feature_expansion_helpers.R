@@ -6,12 +6,14 @@
 #
 # Current implementation status:
 #   Phase 1: atmospheric evaporative demand -- IMPLEMENTED
-#   Phase 2: surface energy and radiation balance -- planned
+#   Phase 2: surface energy and radiation balance -- IMPLEMENTED
 #   Phase 3: event persistence and environmental variability -- planned
 #   Phase 4: soil hydraulic capacity and profile structure -- planned
 #
-# Required package for Phase 1:
+# Required packages:
 #   bigleaf
+#   Evapotranspiration is used in tests to validate FAO-56 ET0 against an
+#   established package implementation.
 #
 # Add to DESCRIPTION Imports:
 #   bigleaf
@@ -34,7 +36,8 @@
 # -----------------------------------------------------------------------------
 
 UFEED_EXPANSION_MODULES <- c(
-  "atmospheric_demand"
+  "atmospheric_demand",
+  "surface_energy_radiation"
 )
 
 
@@ -146,6 +149,72 @@ UFEED_EXPANSION_MODULES <- c(
   }
 
   out
+}
+
+
+.UFEED_get_optional_numeric_column <- function(data, candidates) {
+  candidate <- candidates[candidates %in% names(data)][1]
+
+  if (is.na(candidate)) {
+    return(rep(NA_real_, nrow(data)))
+  }
+
+  .UFEED_numeric_or_na(data, candidate)
+}
+
+
+.UFEED_fao56_esat <- function(temperature) {
+  out <- rep(NA_real_, length(temperature))
+  ok <- is.finite(temperature)
+  out[ok] <- 0.6108 * exp((17.27 * temperature[ok]) / (temperature[ok] + 237.3))
+  out
+}
+
+
+.UFEED_fao56_slope_vapor_pressure_curve <- function(temperature) {
+  esat <- .UFEED_fao56_esat(temperature)
+  out <- rep(NA_real_, length(temperature))
+  ok <- is.finite(temperature) & is.finite(esat)
+  out[ok] <- 4098 * esat[ok] / ((temperature[ok] + 237.3)^2)
+  out
+}
+
+
+.UFEED_fao56_pressure_from_elevation <- function(elevation_m) {
+  out <- rep(NA_real_, length(elevation_m))
+  ok <- is.finite(elevation_m)
+  out[ok] <- 101.3 * (((293 - 0.0065 * elevation_m[ok]) / 293)^5.26)
+  out
+}
+
+
+.UFEED_solar_geometry <- function(date, lat) {
+  date <- as.Date(date)
+  lat_rad <- lat * pi / 180
+  doy <- as.integer(format(date, "%j"))
+
+  solar_constant <- 0.0820
+  inverse_relative_distance <- 1 + 0.033 * cos((2 * pi / 365) * doy)
+  solar_declination <- 0.409 * sin((2 * pi / 365) * doy - 1.39)
+
+  acos_arg <- -tan(lat_rad) * tan(solar_declination)
+  acos_arg <- pmin(pmax(acos_arg, -1), 1)
+  sunset_hour_angle <- acos(acos_arg)
+
+  extraterrestrial_radiation <- (24 * 60 / pi) *
+    solar_constant *
+    inverse_relative_distance *
+    (
+      sunset_hour_angle * sin(lat_rad) * sin(solar_declination) +
+        cos(lat_rad) * cos(solar_declination) * sin(sunset_hour_angle)
+    )
+
+  daylength_hours <- (24 / pi) * sunset_hour_angle
+
+  data.frame(
+    DAYLENGTH_HOURS = daylength_hours,
+    EXTRATERRESTRIAL_RADIATION = extraterrestrial_radiation
+  )
 }
 
 
@@ -323,7 +392,180 @@ UFEED_compute_atmospheric_demand_features <- function(
 
 
 # -----------------------------------------------------------------------------
-# 3. Public expansion pipeline
+# 3. Phase 2: surface energy and radiation balance
+# -----------------------------------------------------------------------------
+
+#' Compute surface-energy and radiation-balance features
+#'
+#' Adds daily radiation geometry, net-radiation, and reference
+#' evapotranspiration features using FAO-56 equations. The independently
+#' computed ET0 feature is intentionally named `ET0_FAO56_INDEPENDENT` so it is
+#' not confused with UFEED's raw `EVPTRNS` variable, whose semantics depend on
+#' the weather source.
+#'
+#' The FAO-56 Penman-Monteith implementation is vectorized to preserve the row
+#' identity of UFEED tables. It follows the same input convention used by the
+#' `Evapotranspiration` package (`Tmax`, `Tmin`, vapor pressure, wind speed, and
+#' incoming solar radiation) and is tested against that package.
+#'
+#' @param ufeed_data A data frame containing UFEED raw weather columns.
+#' @param albedo Numeric surface albedo used for net shortwave radiation. The
+#'   default, `0.23`, is the FAO-56 reference grass value.
+#' @param soil_heat_flux Numeric daily soil heat flux for FAO-56 ET0. The
+#'   default is `0`, as commonly used for daily time steps.
+#' @param clamp_negative_radiation Logical. Clamp negative net radiation and ET0
+#'   values to zero.
+#'
+#' @return The input data frame with surface-energy and radiation features
+#'   appended.
+#'
+#' @details
+#' Required inputs:
+#' - `Date`
+#' - `lat`
+#' - `T2M`
+#' - `T2M_MAX`
+#' - `T2M_MIN`
+#' - `ALLSKY_SFC_SW_DWN`
+#' - `WS2M`
+#' - `T2MDEW` or `RH2M`
+#'
+#' Optional inputs:
+#' - `PS` for pressure in kPa
+#' - `elevation`, `ELEVATION`, `elev`, or `Elev` for elevation in m when `PS`
+#'   is unavailable
+#'
+#' Generated variables and units:
+#' - `DAYLENGTH_HOURS`: astronomical daylength, hours
+#' - `EXTRATERRESTRIAL_RADIATION`: extraterrestrial radiation, MJ m-2 day-1
+#' - `CLEAR_SKY_RADIATION`: clear-sky radiation, MJ m-2 day-1
+#' - `CLEARNESS_INDEX`: incoming shortwave divided by extraterrestrial radiation
+#' - `NET_SHORTWAVE_RADIATION`: net shortwave radiation, MJ m-2 day-1
+#' - `NET_LONGWAVE_RADIATION`: FAO-56 net outgoing longwave radiation,
+#'   MJ m-2 day-1
+#' - `NET_RADIATION`: net radiation, MJ m-2 day-1
+#' - `ET0_FAO56_INDEPENDENT`: independent FAO-56 reference ET0, mm day-1
+#'
+#' @export
+UFEED_compute_surface_energy_radiation_features <- function(
+    ufeed_data,
+    albedo = 0.23,
+    soil_heat_flux = 0,
+    clamp_negative_radiation = TRUE
+) {
+  if (!is.data.frame(ufeed_data)) {
+    stop("`ufeed_data` must be a data frame.", call. = FALSE)
+  }
+
+  .UFEED_require_columns(
+    data = ufeed_data,
+    required_cols = c(
+      "Date",
+      "lat",
+      "T2M",
+      "T2M_MAX",
+      "T2M_MIN",
+      "ALLSKY_SFC_SW_DWN",
+      "WS2M"
+    ),
+    module_name = "surface_energy_radiation"
+  )
+
+  if (!any(c("T2MDEW", "RH2M") %in% names(ufeed_data))) {
+    stop(
+      "The `surface_energy_radiation` module requires `T2MDEW` or `RH2M`.",
+      call. = FALSE
+    )
+  }
+
+  if (!is.numeric(albedo) || length(albedo) != 1L || !is.finite(albedo) ||
+      albedo < 0 || albedo > 1) {
+    stop("`albedo` must be one finite numeric value between 0 and 1.", call. = FALSE)
+  }
+
+  if (!is.numeric(soil_heat_flux) || length(soil_heat_flux) != 1L ||
+      !is.finite(soil_heat_flux)) {
+    stop("`soil_heat_flux` must be one finite numeric value.", call. = FALSE)
+  }
+
+  date <- as.Date(ufeed_data$Date)
+  lat <- .UFEED_numeric_or_na(ufeed_data, "lat")
+  Tmean <- .UFEED_numeric_or_na(ufeed_data, "T2M")
+  Tmax <- .UFEED_numeric_or_na(ufeed_data, "T2M_MAX")
+  Tmin <- .UFEED_numeric_or_na(ufeed_data, "T2M_MIN")
+  Tdew <- .UFEED_numeric_or_na(ufeed_data, "T2MDEW")
+  RH <- .UFEED_numeric_or_na(ufeed_data, "RH2M")
+  Rs <- .UFEED_numeric_or_na(ufeed_data, "ALLSKY_SFC_SW_DWN")
+  wind <- .UFEED_numeric_or_na(ufeed_data, "WS2M")
+  pressure <- .UFEED_numeric_or_na(ufeed_data, "PS")
+  elevation <- .UFEED_get_optional_numeric_column(
+    ufeed_data,
+    c("elevation", "ELEVATION", "elev", "Elev")
+  )
+
+  pressure_from_elevation <- .UFEED_fao56_pressure_from_elevation(elevation)
+  pressure <- ifelse(is.finite(pressure), pressure, pressure_from_elevation)
+  pressure <- ifelse(is.finite(pressure), pressure, 101.3)
+  elevation <- ifelse(is.finite(elevation), elevation, 0)
+
+  solar <- .UFEED_solar_geometry(date, lat)
+  Ra <- solar$EXTRATERRESTRIAL_RADIATION
+  daylength <- solar$DAYLENGTH_HOURS
+  Rso <- (0.75 + 2e-5 * elevation) * Ra
+
+  esat_tmax <- .UFEED_fao56_esat(Tmax)
+  esat_tmin <- .UFEED_fao56_esat(Tmin)
+  esat_mean <- (esat_tmax + esat_tmin) / 2
+  esat_tmean <- .UFEED_fao56_esat(Tmean)
+
+  ea_from_dewpoint <- .UFEED_fao56_esat(Tdew)
+  rh_fraction <- pmin(pmax(RH / 100, 0), 1)
+  ea_from_rh <- esat_tmean * rh_fraction
+  ea <- ifelse(is.finite(ea_from_dewpoint), ea_from_dewpoint, ea_from_rh)
+
+  vpd <- esat_mean - ea
+  slope <- .UFEED_fao56_slope_vapor_pressure_curve(Tmean)
+  gamma <- 0.000665 * pressure
+
+  Rns <- (1 - albedo) * Rs
+  Rs_Rso <- ifelse(is.finite(Rso) & Rso > 0, Rs / Rso, NA_real_)
+  Rs_Rso <- pmin(Rs_Rso, 1)
+
+  sigma <- 4.903e-9
+  Rnl <- sigma *
+    (((Tmax + 273.16)^4 + (Tmin + 273.16)^4) / 2) *
+    (0.34 - 0.14 * sqrt(pmax(ea, 0))) *
+    (1.35 * Rs_Rso - 0.35)
+
+  Rn <- Rns - Rnl
+
+  ET0 <- (
+    0.408 * slope * (Rn - soil_heat_flux) +
+      gamma * (900 / (Tmean + 273)) * wind * vpd
+  ) / (
+    slope + gamma * (1 + 0.34 * wind)
+  )
+
+  if (isTRUE(clamp_negative_radiation)) {
+    Rn <- ifelse(is.na(Rn), NA_real_, pmax(Rn, 0))
+    ET0 <- ifelse(is.na(ET0), NA_real_, pmax(ET0, 0))
+  }
+
+  ufeed_data$DAYLENGTH_HOURS <- daylength
+  ufeed_data$EXTRATERRESTRIAL_RADIATION <- Ra
+  ufeed_data$CLEAR_SKY_RADIATION <- Rso
+  ufeed_data$CLEARNESS_INDEX <- ifelse(is.finite(Ra) & Ra > 0, Rs / Ra, NA_real_)
+  ufeed_data$NET_SHORTWAVE_RADIATION <- Rns
+  ufeed_data$NET_LONGWAVE_RADIATION <- Rnl
+  ufeed_data$NET_RADIATION <- Rn
+  ufeed_data$ET0_FAO56_INDEPENDENT <- ET0
+
+  ufeed_data
+}
+
+
+# -----------------------------------------------------------------------------
+# 4. Public expansion pipeline
 # -----------------------------------------------------------------------------
 
 #' Expand a completed UFEED data frame with optional feature modules
@@ -335,10 +577,15 @@ UFEED_compute_atmospheric_demand_features <- function(
 #' @param ufeed_data A data frame returned by `UFEED_history()`,
 #'   `UFEED_present()`, or `UFEED_wrap_up()`.
 #' @param included_module Character vector of expansion modules. Currently
-#'   implemented: `"atmospheric_demand"`.
+#'   implemented: `"atmospheric_demand"` and `"surface_energy_radiation"`.
 #' @param esat_formula Saturation-vapor-pressure formulation used by the
 #'   atmospheric-demand module.
 #' @param clamp_negative_vpd Logical. Clamp negative VPD estimates to zero.
+#' @param albedo Numeric surface albedo used by the surface-energy module.
+#' @param soil_heat_flux Numeric daily soil heat flux used by the surface-energy
+#'   module.
+#' @param clamp_negative_radiation Logical. Clamp negative net radiation and ET0
+#'   estimates to zero.
 #' @param message_progress Logical. Print module progress messages.
 #'
 #' @return The input UFEED table with selected expansion features appended.
@@ -348,6 +595,9 @@ UFEED_expand_features <- function(
     included_module = "atmospheric_demand",
     esat_formula = c("Allen_1998", "Sonntag_1990", "Alduchov_1996"),
     clamp_negative_vpd = TRUE,
+    albedo = 0.23,
+    soil_heat_flux = 0,
+    clamp_negative_radiation = TRUE,
     message_progress = TRUE
 ) {
   included_module <- .UFEED_validate_expansion_modules(included_module)
@@ -364,6 +614,19 @@ UFEED_expand_features <- function(
       ufeed_data = out,
       esat_formula = esat_formula,
       clamp_negative_vpd = clamp_negative_vpd
+    )
+  }
+
+  if ("surface_energy_radiation" %in% included_module) {
+    if (isTRUE(message_progress)) {
+      message("Computing surface-energy and radiation-balance features...")
+    }
+
+    out <- UFEED_compute_surface_energy_radiation_features(
+      ufeed_data = out,
+      albedo = albedo,
+      soil_heat_flux = soil_heat_flux,
+      clamp_negative_radiation = clamp_negative_radiation
     )
   }
 

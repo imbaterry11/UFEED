@@ -9,6 +9,9 @@ UFEED_expand_features(
   included_module = "atmospheric_demand",
   esat_formula = c("Allen_1998", "Sonntag_1990", "Alduchov_1996"),
   clamp_negative_vpd = TRUE,
+  albedo = 0.23,
+  soil_heat_flux = 0,
+  clamp_negative_radiation = TRUE,
   message_progress = TRUE
 )
 }
@@ -17,12 +20,20 @@ UFEED_expand_features(
 \code{UFEED_present()}, or \code{UFEED_wrap_up()}.}
 
 \item{included_module}{Character vector of expansion modules. Currently
-implemented: \code{"atmospheric_demand"}.}
+implemented: \code{"atmospheric_demand"} and \code{"surface_energy_radiation"}.}
 
 \item{esat_formula}{Saturation-vapor-pressure formulation used by the
 atmospheric-demand module.}
 
 \item{clamp_negative_vpd}{Logical. Clamp negative VPD estimates to zero.}
+
+\item{albedo}{Numeric surface albedo used by the surface-energy module.}
+
+\item{soil_heat_flux}{Numeric daily soil heat flux used by the surface-energy
+module.}
+
+\item{clamp_negative_radiation}{Logical. Clamp negative net radiation and ET0
+estimates to zero.}
 
 \item{message_progress}{Logical. Print module progress messages.}
 }

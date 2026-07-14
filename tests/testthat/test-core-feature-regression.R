@@ -1,0 +1,134 @@
+make_regression_weather <- function(n = 120, lat = 46.16) {
+  dates <- as.Date("2024-01-01") + seq_len(n) - 1L
+  x <- seq_len(n)
+
+  data.frame(
+    Date = dates,
+    lon = rep(7.155, n),
+    lat = rep(lat, n),
+    T2M = x,
+    T2M_MAX = x + 5,
+    T2M_MIN = x - 5,
+    T2MDEW = x - 10,
+    PRECTOTCORR = x,
+    RH2M = rep(60, n),
+    WS2M = rep(2, n),
+    WS2M_MAX = rep(3, n),
+    GWETROOT = x / 100,
+    GWETTOP = x / 100,
+    TSOIL1 = x + 1,
+    TSOIL3 = x + 2,
+    EVPTRNS = x / 10
+  )
+}
+
+manual_ewma <- function(x, window, reverse = FALSE) {
+  alpha <- 2 / (window + 1)
+  out <- rep(NA_real_, length(x))
+
+  for (i in seq_along(x)) {
+    start_i <- i - window + 1L
+    if (start_i < 1L) next
+
+    x_window <- x[start_i:i]
+    weights <- if (reverse) {
+      (1 - alpha)^(0:(window - 1L))
+    } else {
+      (1 - alpha)^((window - 1L):0)
+    }
+    weights <- weights / sum(weights)
+    out[i] <- sum(x_window * weights)
+  }
+
+  out
+}
+
+test_that("cumsum features are backward cumulative sums within season", {
+  weather <- make_regression_weather(n = 10)
+
+  features <- UFEED_compute_weather_features(
+    weather_data = weather,
+    feature_profile = "history",
+    included_module = "cumsum_features",
+    cumsum_cols = "PRECTOTCORR",
+    cumsum_max_missing_prop = 1,
+    message_progress = FALSE
+  )
+
+  expect_equal(features$PRECTOTCORR_y2d, cumsum(weather$PRECTOTCORR))
+  expect_equal(features$PRECTOTCORR_dormant2d, cumsum(weather$PRECTOTCORR))
+  expect_equal(features[, c("Date", "lon", "lat")], weather[, c("Date", "lon", "lat")])
+})
+
+test_that("EWMA and REWMA use only backward full windows with expected weights", {
+  weather <- make_regression_weather(n = 8)
+
+  features <- UFEED_compute_weather_features(
+    weather_data = weather,
+    feature_profile = "history",
+    included_module = "EWMA_REWMA_features",
+    ewma_rewma_cols = "T2M",
+    ewma_rewma_windows = 3,
+    ewma_rewma_max_missing_prop = 0,
+    ewma_rewma_require_full_window = TRUE,
+    message_progress = FALSE
+  )
+
+  expect_equal(features$T2M_EWMA_3, manual_ewma(weather$T2M, 3))
+  expect_equal(features$T2M_REWMA_3, manual_ewma(weather$T2M, 3, reverse = TRUE))
+  expect_true(all(is.na(features$T2M_EWMA_3[1:2])))
+  expect_true(all(is.na(features$T2M_REWMA_3[1:2])))
+})
+
+test_that("EWMA and REWMA values are not changed by future rows", {
+  weather <- make_regression_weather(n = 8)
+  weather_future_changed <- weather
+  weather_future_changed$T2M[5:8] <- weather_future_changed$T2M[5:8] * 100
+
+  baseline <- UFEED_compute_weather_features(
+    weather_data = weather,
+    feature_profile = "history",
+    included_module = "EWMA_REWMA_features",
+    ewma_rewma_cols = "T2M",
+    ewma_rewma_windows = 3,
+    message_progress = FALSE
+  )
+
+  changed <- UFEED_compute_weather_features(
+    weather_data = weather_future_changed,
+    feature_profile = "history",
+    included_module = "EWMA_REWMA_features",
+    ewma_rewma_cols = "T2M",
+    ewma_rewma_windows = 3,
+    message_progress = FALSE
+  )
+
+  expect_equal(changed$T2M_EWMA_3[1:4], baseline$T2M_EWMA_3[1:4])
+  expect_equal(changed$T2M_REWMA_3[1:4], baseline$T2M_REWMA_3[1:4])
+})
+
+test_that("season summary features are cumulative within season", {
+  weather <- make_regression_weather(n = 8)
+
+  features <- UFEED_compute_weather_features(
+    weather_data = weather,
+    feature_profile = "history",
+    included_module = "season_summary_features",
+    ewma_rewma_cols = c("T2M_MAX", "T2M_MIN"),
+    ewma_rewma_windows = 2,
+    ewma_rewma_require_full_window = FALSE,
+    season_max_cols = "T2M_MAX",
+    season_min_cols = "T2M_MIN",
+    message_progress = FALSE
+  )
+
+  expect_equal(
+    features$T2M_MAX_EWMA_2_season_max,
+    cummax(features$T2M_MAX_EWMA_2)
+  )
+  expect_equal(
+    features$T2M_MIN_EWMA_2_season_min,
+    cummin(features$T2M_MIN_EWMA_2)
+  )
+  expect_equal(features[, c("Date", "lon", "lat")], weather[, c("Date", "lon", "lat")])
+})
