@@ -1,8 +1,15 @@
-# UFEED
+<p align="center">
+  <img src="man/figures/UFEED_logo.png" alt="UFEED logo" width="240">
+</p>
 
-**UFEED** (*Universal Feature Extraction from Environmental Data*) is an R
-package for downloading weather and soil data and creating environmental
-features for plant physiology and crop modelling.
+<h1 align="center">UFEED</h1>
+
+<p align="center">
+  <strong>Universal Feature Extraction from Environmental Data</strong>
+</p>
+
+UFEED is an R package for downloading weather and soil data and creating
+environmental features for plant physiology and crop modelling.
 
 ![UFEED workflow](man/figures/FigureS1_UFEED_workflow.png)
 
