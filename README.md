@@ -14,12 +14,12 @@ Install the stable, paper-associated release from GitHub:
 
 ```r
 install.packages("remotes")
-remotes::install_github("imbaterry11/UFEED@v0.1.0", dependencies = TRUE)
+remotes::install_github("imbaterry11/UFEED@v0.1.1", dependencies = TRUE)
 library(UFEED)
 ```
 
 Users can also
-[download the v0.1.0 source archive](https://github.com/imbaterry11/UFEED/archive/refs/tags/v0.1.0.tar.gz).
+[download the v0.1.1 source archive](https://github.com/imbaterry11/UFEED/archive/refs/tags/v0.1.1.tar.gz).
 
 Workflows using Google Earth Engine through `weather_data_source = "power_ee"`
 also require a working [`rgee`](https://github.com/r-spatial/rgee)
@@ -190,14 +190,14 @@ temperature bases, and chilling-model settings.
 
 Use
 [`UFEED_feature_inventory.csv`](UFEED_feature_inventory.csv)
-as the reference dictionary for UFEED 0.1.0 output columns. It records each
+as the reference dictionary for UFEED 0.1.1 output columns. It records each
 core feature's definition, unit, required inputs, temporal direction,
 generating module, and relevant notes.
 
 ## Under development
 
 Atmospheric-demand and surface-energy/radiation expansion helpers are under
-development and are not included in UFEED 0.1.0.
+development and are not included in UFEED 0.1.1.
 
 ## License
 

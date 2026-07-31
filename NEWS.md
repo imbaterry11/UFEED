@@ -1,3 +1,14 @@
+# UFEED 0.1.1
+
+Patch release.
+
+## Fixed
+
+- Suppressed expected current-year data-lag warnings inside
+  `UFEED_present()` while retaining them for explicit historical downloads.
+- Prevented duplicate current-year lag warnings from nested NASA POWER calls
+  in the `power_open_meteo` workflow.
+
 # UFEED 0.1.0
 
 Initial public release.
