@@ -2,7 +2,7 @@
 
 **UFEED** (*Universal Feature Extraction from Environmental Data*) is an R package for downloading, processing, and engineering environmental features for plant physiology and crop modeling.
 
-## Install UFEED 0.1.0
+## Installation
 
 Install the stable, paper-associated release directly from GitHub:
 
@@ -14,6 +14,10 @@ remotes::install_github("imbaterry11/UFEED@v0.1.0", dependencies = TRUE)
 Then load it with `library(UFEED)`. The release source archive can also be
 downloaded from the repository's
 [Releases page](https://github.com/imbaterry11/UFEED/releases/tag/v0.1.0).
+
+Workflows using Google Earth Engine through `weather_data_source = "power_ee"`
+also require a working [`rgee`](https://github.com/r-spatial/rgee)
+configuration.
 
 UFEED can be used in two ways:
 
@@ -35,28 +39,6 @@ UFEED can be used in two ways:
   <a href="#soil-data-options">Soil data</a> •
   <a href="#citation">Citation</a>
 </p>
-
----
-
-## Installation
-
-```r
-install.packages("remotes")
-
-remotes::install_github(
-  "imbaterry11/UFEED@v0.1.0",
-  dependencies = TRUE,
-  upgrade = "never"
-)
-```
-
-Then load the package:
-
-```r
-library(UFEED)
-```
-
-Some optional workflows, especially those using Google Earth Engine through `weather_data_source = "power_ee"`, require a working [`rgee`](https://github.com/r-spatial/rgee) and Google Earth Engine configuration. Users who want to use this option should follow the installation, authentication, and configuration procedures described in the [`rgee` GitHub repository](https://github.com/r-spatial/rgee) before running UFEED functions with `weather_data_source = "power_ee"`.
 
 ---
 
