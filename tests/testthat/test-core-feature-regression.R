@@ -132,3 +132,58 @@ test_that("season summary features are cumulative within season", {
   )
   expect_equal(features[, c("Date", "lon", "lat")], weather[, c("Date", "lon", "lat")])
 })
+
+test_that("current-year lag warnings can be suppressed by present workflows", {
+  current_year <- as.integer(format(Sys.Date(), "%Y"))
+
+  collect_warnings <- function(expr) {
+    messages <- character()
+    tryCatch(
+      withCallingHandlers(
+        expr,
+        warning = function(w) {
+          messages <<- c(messages, conditionMessage(w))
+          invokeRestart("muffleWarning")
+        }
+      ),
+      error = function(e) NULL
+    )
+    messages
+  }
+
+  power_args <- list(
+    lon = 7.155,
+    lat = 46.16,
+    start_year = current_year,
+    end_year = current_year,
+    parameters = "T2M",
+    max_retries = 0,
+    retry_wait_sec = 0
+  )
+
+  power_warnings <- collect_warnings(
+    do.call(UFEED:::get_weather_data_NASA_POWER_ONLY, power_args)
+  )
+  expect_length(power_warnings, 1)
+  expect_match(power_warnings, "NASA POWER data may lag", fixed = TRUE)
+
+  power_args$warn_current_year <- FALSE
+  expect_length(
+    collect_warnings(do.call(UFEED:::get_weather_data_NASA_POWER_ONLY, power_args)),
+    0
+  )
+
+  combined_args <- power_args
+  combined_args$warn_current_year <- TRUE
+  combined_warnings <- collect_warnings(
+    do.call(UFEED:::get_weather_data_power_open_meteo, combined_args)
+  )
+  expect_length(combined_warnings, 1)
+  expect_match(combined_warnings, "POWER/Open-Meteo may lag", fixed = TRUE)
+
+  combined_args$warn_current_year <- FALSE
+  expect_length(
+    collect_warnings(do.call(UFEED:::get_weather_data_power_open_meteo, combined_args)),
+    0
+  )
+})

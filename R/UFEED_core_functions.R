@@ -910,7 +910,8 @@ UFEED_download_present_weather <- function(
     weather_data_source = weather_data_source,
     parameters = parameters,
     max_retries = max_retries,
-    retry_wait_sec = retry_wait_sec
+    retry_wait_sec = retry_wait_sec,
+    warn_current_year = FALSE
   ) |>
     dplyr::mutate(data_source = paste0("historical_", weather_data_source))
 
@@ -1568,7 +1569,8 @@ UFEED_download_weather_for_coordinates <- function(
     weather_data_source,
     parameters,
     max_retries = 10,
-    retry_wait_sec = 2
+    retry_wait_sec = 2,
+    warn_current_year = TRUE
 ) {
   out <- vector("list", nrow(coords))
 
@@ -1592,7 +1594,8 @@ UFEED_download_weather_for_coordinates <- function(
           end_year = end_i,
           parameters = parameters,
           max_retries = max_retries,
-          retry_wait_sec = retry_wait_sec
+          retry_wait_sec = retry_wait_sec,
+          warn_current_year = warn_current_year
         )
       } else if (weather_data_source == "power_open_meteo") {
         get_weather_data_power_open_meteo(
@@ -1602,7 +1605,8 @@ UFEED_download_weather_for_coordinates <- function(
           end_year = end_i,
           parameters = parameters,
           max_retries = max_retries,
-          retry_wait_sec = retry_wait_sec
+          retry_wait_sec = retry_wait_sec,
+          warn_current_year = warn_current_year
         )
       } else if (weather_data_source == "power_ee") {
         get_weather_data_power_ee(
@@ -1845,7 +1849,8 @@ get_weather_data_NASA_POWER_ONLY <- function(
     parameters = UFEED_WEATHER_PARAMETERS_HISTORY,
     community = "ag",
     max_retries = 10,
-    retry_wait_sec = 2
+    retry_wait_sec = 2,
+    warn_current_year = TRUE
 ) {
   UFEED_check_required_packages(c("httr", "jsonlite"))
 
@@ -1870,10 +1875,12 @@ get_weather_data_NASA_POWER_ONLY <- function(
   }
 
   if (end_year == current_year) {
-    warning(
-      "Current year selected. NASA POWER data may lag. Using Sys.Date() - 6 as end_date.",
-      call. = FALSE
-    )
+    if (isTRUE(warn_current_year)) {
+      warning(
+        "Current year selected. NASA POWER data may lag. Using Sys.Date() - 6 as end_date.",
+        call. = FALSE
+      )
+    }
     end_date <- Sys.Date() - 6
   } else {
     end_date <- as.Date(paste0(end_year, "-12-31"))
@@ -1986,7 +1993,8 @@ get_weather_data_power_open_meteo <- function(
     max_retries = 10,
     retry_wait_sec = 2,
     openmeteo_timezone = "UTC",
-    openmeteo_model = "era5_seamless"
+    openmeteo_model = "era5_seamless",
+    warn_current_year = TRUE
 ) {
   UFEED_check_required_packages(c("httr", "jsonlite", "dplyr"))
 
@@ -2002,7 +2010,9 @@ get_weather_data_power_open_meteo <- function(
   }
 
   if (end_year == current_year) {
-    warning("Current year selected. POWER/Open-Meteo may lag. Using Sys.Date() - 10 as end_date.", call. = FALSE)
+    if (isTRUE(warn_current_year)) {
+      warning("Current year selected. POWER/Open-Meteo may lag. Using Sys.Date() - 10 as end_date.", call. = FALSE)
+    }
     end_date <- Sys.Date() - 10
   } else {
     end_date <- as.Date(paste0(end_year, "-12-31"))
@@ -2016,7 +2026,8 @@ get_weather_data_power_open_meteo <- function(
     parameters = parameters,
     community = community,
     max_retries = max_retries,
-    retry_wait_sec = retry_wait_sec
+    retry_wait_sec = retry_wait_sec,
+    warn_current_year = FALSE
   )
 
   om_map <- c(
