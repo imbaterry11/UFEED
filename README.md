@@ -1,11 +1,6 @@
-<p align="center">
-  <img src="man/figures/UFEED_logo.png" alt="UFEED logo" width="240">
-</p>
-
-<h1 align="center">UFEED</h1>
-
-<p align="center">
-  <strong>Universal Feature Extraction from Environmental Data</strong>
+<p align="left">
+  <img src="man/figures/UFEED_logo.png" alt="UFEED logo" width="120">&nbsp;&nbsp;
+  <strong>UFEED: Universal Feature Extraction from Environmental Data</strong>
 </p>
 
 UFEED is an R package for downloading weather and soil data and creating
