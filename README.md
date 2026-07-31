@@ -84,7 +84,7 @@ forecast Open-Meteo data.
 | Option | Recommended use | Setup |
 |---|---|---|
 | `"power"` | Easiest option and suitable for most workflows. | None |
-| `"power_open_meteo"` | Higher-resolution weather without Earth Engine. | None for normal use |
+| `"power_open_meteo"` | Higher-resolution weather without Earth Engine. | None for normal use, but free [API call limits](https://open-meteo.com/en/terms) apply |
 | `"power_ee"` | ERA5-Land data through Google Earth Engine. | `rgee`, Earth Engine authentication, and a cloud project |
 
 Choose a source with the `weather_data_source` argument. See the
@@ -100,7 +100,24 @@ provider-specific details and usage limits.
 | `"remote"` | Small jobs and quick tests without local raster files. |
 | `"local"` | Repeated analyses or many sites using downloaded SoilGrids rasters. |
 
-For local extraction, place the required SoilGrids `.tif` files in one folder:
+Download the aggregated 1 km rasters from the
+[ISRIC SoilGrids 1000 m directory](https://files.isric.org/soilgrids/latest/data_aggregated/1000m/).
+Place all required depth-specific `.tif` files directly in one folder, without
+variable-specific subfolders. For example:
+
+```text
+soilgrids_1k/
+  bdod_0-5cm_mean_1000.tif
+  bdod_5-15cm_mean_1000.tif
+  ...
+  clay_0-5cm_mean_1000.tif
+  clay_5-15cm_mean_1000.tif
+  ...
+  wv1500_60-100cm_mean_1000.tif
+  wv1500_100-200cm_mean_1000.tif
+```
+
+Then provide this folder to UFEED:
 
 ```r
 soil_features <- UFEED_get_soil_features(
@@ -110,9 +127,6 @@ soil_features <- UFEED_get_soil_features(
   soil_data_local_dir = "/path/to/soilgrids_1k"
 )
 ```
-
-SoilGrids files and access instructions are available from
-[ISRIC SoilGrids](https://docs.isric.org/globaldata/soilgrids/).
 
 ## Using local weather data
 
