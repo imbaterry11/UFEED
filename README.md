@@ -2,6 +2,19 @@
 
 **UFEED** (*Universal Feature Extraction from Environmental Data*) is an R package for downloading, processing, and engineering environmental features for plant physiology and crop modeling.
 
+## Install UFEED 0.1.0
+
+Install the stable, paper-associated release directly from GitHub:
+
+```r
+install.packages("remotes")
+remotes::install_github("imbaterry11/UFEED@v0.1.0", dependencies = TRUE)
+```
+
+Then load it with `library(UFEED)`. The release source archive can also be
+downloaded from the repository's
+[Releases page](https://github.com/imbaterry11/UFEED/releases/tag/v0.1.0).
+
 UFEED can be used in two ways:
 
 1. **High-level workflow**: one function downloads weather, computes the standard UFEED feature set, extracts soil features, and returns a modeling-ready dataframe.
@@ -31,7 +44,7 @@ UFEED can be used in two ways:
 install.packages("remotes")
 
 remotes::install_github(
-  "imbaterry11/UFEED",
+  "imbaterry11/UFEED@v0.1.0",
   dependencies = TRUE,
   upgrade = "never"
 )
@@ -355,36 +368,15 @@ weather_features <- UFEED_compute_weather_features(
 )
 ```
 
-### Optional expansion modules
+### Features under development
 
-Completed UFEED tables can be expanded with additional post-processing modules
-without changing the weather download, soil extraction, or core feature engine.
+Feature-expansion helpers for atmospheric-demand and surface-energy/radiation
+variables are currently under development and are not included in UFEED 0.1.0.
 
-```r
-ufeed_present <- UFEED_present(
-  lon = 7.155,
-  lat = 46.16,
-  weather_data_source = "power",
-  soil_data_source = "remote"
-)
-
-ufeed_expanded <- UFEED_expand_features(
-  ufeed_present,
-  included_module = c("atmospheric_demand", "surface_energy_radiation")
-)
-```
-
-The `"atmospheric_demand"` module adds saturation vapor pressure, actual vapor
-pressure, vapor pressure deficit, specific humidity, and wind-scaled VPD
-features using the `bigleaf` package. Dew point temperature is used
-preferentially for actual vapor pressure; relative humidity is used as a
-row-level fallback when dew point is missing.
-
-The `"surface_energy_radiation"` module adds daylength, extraterrestrial
-radiation, clear-sky radiation, clearness index, net shortwave radiation, net
-longwave radiation, net radiation, and an independent FAO-56 reference ET0
-estimate. The ET0 output is named `ET0_FAO56_INDEPENDENT` so it is not confused
-with the raw `EVPTRNS` column, whose meaning depends on the weather source.
+These experimental modules are being developed separately and are planned for
+a future release. The public API of version 0.1.0 contains only the tested core
+data-acquisition, feature-computation, soil-extraction, and table-assembly
+functions.
 
 ---
 
