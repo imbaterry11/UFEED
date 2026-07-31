@@ -61,6 +61,16 @@ UFEED can be used in two ways:
 | `UFEED_get_soil_features()` | Extract SoilGrids-derived static soil features. |
 | `UFEED_wrap_up()` | Join raw weather, computed weather features, and soil features into one UFEED modeling data frame. |
 
+## Feature inventory and definitions
+
+Use the
+[`UFEED_feature_inventory.csv`](UFEED_feature_inventory.csv)
+file as the reference dictionary for interpreting UFEED 0.1.0 output columns.
+It records each core weather, soil, and derived feature's definition, unit,
+required inputs, temporal direction, generating module, and relevant notes.
+Features belonging to the expansion helpers under development are intentionally
+excluded from this version of the inventory.
+
 ---
 
 ## Data source options
