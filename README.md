@@ -4,7 +4,7 @@
 </p>
 
 UFEED is an R package for downloading weather and soil data and creating
-environmental features for plant physiology and crop modelling.
+environmental features for plant physiology and crop modeling.
 
 ![UFEED workflow](man/figures/FigureS1_UFEED_workflow.png)
 

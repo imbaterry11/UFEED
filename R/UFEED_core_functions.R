@@ -434,7 +434,7 @@ ensure_ee_initialized <- function(
 
     if (answer != 1) {
       stop(
-        "Earth Engine initialization cancelled.\n",
+        "Earth Engine initialization canceled.\n",
         "Use weather_data_source = 'power' or 'power_open_meteo' ",
         "if you do not want to use Earth Engine.",
         call. = FALSE
