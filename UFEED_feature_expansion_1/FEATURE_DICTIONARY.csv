@@ -1,0 +1,31 @@
+name,role,unit,calculation_or_source,scientific_note
+Date,input,date,UFEED daily date,Required for day of year
+lat,input,decimal degree,UFEED coordinate,Range -90 to 90
+T2M,input,degC,Daily mean 2 m air temperature,Converted from declared unit
+T2M_MAX,input,degC,Daily maximum 2 m air temperature,Must be at least T2M
+T2M_MIN,input,degC,Daily minimum 2 m air temperature,Must not exceed T2M
+T2MDEW,input,degC,Daily mean 2 m dew-point temperature,Preferred humidity input
+RH2M,input,percent,Daily mean 2 m relative humidity,Lower-quality fallback
+PS,input,kPa,Surface pressure,Pressure or elevation required
+WS2M,input,m s-1,Wind-speed column,Actual measurement height declared separately
+ALLSKY_SFC_SW_DWN,input,MJ m-2 day-1,Daily incoming shortwave radiation,Daily energy not instantaneous power
+SATURATION_VAPOR_PRESSURE_TMEAN_KPA,output,kPa,FAO-56 Eq 11 at T2M,Plant-response value
+SATURATION_VAPOR_PRESSURE_DAILY_KPA,output,kPa,Mean es at Tmax and Tmin,FAO-56 daily es
+ACTUAL_VAPOR_PRESSURE_KPA,output,kPa,FAO-56 Eq 14 or 19,Dew point preferred
+VPD_TMEAN_KPA,output,kPa,es at Tmean minus ea,Plant-response predictor
+VPD_DAILY_FAO56_KPA,output,kPa,Daily es minus ea,Used in ET0
+VPD_AT_TMAX_PROXY_KPA,output,kPa,es at Tmax minus daily ea,Proxy
+VPD_AT_TMIN_PROXY_KPA,output,kPa,es at Tmin minus daily ea,Proxy
+SPECIFIC_HUMIDITY_KG_KG,output,kg kg-1,Humidity mass ratio,Uses ea and pressure
+VPD_WIND_INTERACTION_KPA_M_S,output,kPa m s-1,VPD times 2 m wind,Interaction not flux
+WIND_SPEED_2M_M_S,output,m s-1,FAO-56 Eq 47,Height adjusted
+DAYLENGTH_H,output,h,FAO-56 solar geometry,Astronomical
+EXTRATERRESTRIAL_RADIATION_MJ_M2_DAY,output,MJ m-2 day-1,FAO-56 Eq 21,Top of atmosphere
+CLEAR_SKY_RADIATION_MJ_M2_DAY,output,MJ m-2 day-1,FAO-56 Eq 37,Elevation adjusted
+CLEARNESS_INDEX_RS_RA,output,1,Rs divided by Ra,Atmospheric transmission
+RELATIVE_SOLAR_RADIATION_RS_RSO,output,1,Rs divided by Rso,Longwave input
+NET_SHORTWAVE_RADIATION_MJ_M2_DAY,output,MJ m-2 day-1,FAO-56 Eq 38,Default albedo 0.23
+NET_OUTGOING_LONGWAVE_RADIATION_MJ_M2_DAY,output,MJ m-2 day-1,FAO-56 Eq 39,Relative solar radiation constrained
+NET_RADIATION_MJ_M2_DAY,output,MJ m-2 day-1,Rns minus Rnl,May be negative
+ET0_FAO56_RAW_MM_DAY,output,mm day-1,FAO-56 Eq 6,Unclamped result
+ET0_FAO56_MM_DAY,output,mm day-1,Maximum of raw ET0 and zero,Reference grass ET

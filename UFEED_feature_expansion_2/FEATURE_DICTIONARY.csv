@@ -1,0 +1,20 @@
+name,category,unit,definition,interpretation
+INCIDENT_PAR_MJ_M2_DAY,forcing,MJ m-2 day-1,Shortwave times declared PAR fraction,PAR energy basis
+REFERENCE_FIPAR,reference canopy,1,One minus exp of minus k LAI,Fraction intercepted not necessarily absorbed
+REFERENCE_INTERCEPTED_PAR_MJ_M2_DAY,reference canopy,MJ m-2 day-1,Incident PAR times FIPAR,Reference intercepted PAR
+REFERENCE_APAR_MJ_M2_DAY,reference canopy,MJ m-2 day-1,Intercepted PAR times declared absorptance,Absorbed PAR
+REFERENCE_DEVELOPMENT_TEMP_RESPONSE_0_1,development,1,Wang-Engel response using development cardinal temperatures,Normalized potential rate
+REFERENCE_PHOTOPERIOD_RESPONSE_0_1,development,1,Declared neutral or piecewise daylength response,Not cultivar calibrated by default
+REFERENCE_DAILY_DEVELOPMENT_RATE_0_1,development,1 per day,Temperature response times photoperiod response,Not phenological stage
+REFERENCE_GROWTH_TEMP_RESPONSE_0_1,growth,1,Wang-Engel form using separate growth cardinal temperatures,Reference modifier
+REFERENCE_POTENTIAL_DM_G_M2_DAY,growth opportunity,g m-2 day-1,APAR times declared RUE,Stress-free RUE estimate
+REFERENCE_TEMP_LIMITED_DM_G_M2_DAY,growth opportunity,g m-2 day-1,Potential DM times growth temperature response,Not actual biomass
+DAILY_ATMOSPHERIC_DROUGHT_DOSE_KPA_DAY,exposure,kPa day,Daily FAO-56 VPD times one day,Atmospheric exposure not plant water stress
+DAILY_FROST_SEVERITY_INDEX_DEGC,exposure,degC,Positive frost threshold minus Tmin,Extremum severity not duration
+DAILY_HEAT_SEVERITY_INDEX_DEGC,exposure,degC,Positive Tmax minus heat threshold,Extremum severity not duration
+CUMULATIVE_REFERENCE_DEVELOPMENT_UNITS,cycle aggregate,reference unit,Within-cycle sum of daily development response,Requires explicit cycle identifier
+CUMULATIVE_REFERENCE_APAR_MJ_M2,cycle aggregate,MJ m-2,Within-cycle sum of reference APAR,Requires explicit cycle identifier
+CUMULATIVE_REFERENCE_POTENTIAL_DM_G_M2,cycle aggregate,g m-2,Within-cycle sum of potential DM,Not observed biomass
+CUMULATIVE_ATMOSPHERIC_DROUGHT_DOSE_KPA_DAY,cycle aggregate,kPa day,Within-cycle VPD integral,Not soil or plant drought stress
+CUMULATIVE_FROST_SEVERITY_INDEX_DEGC_DAY,cycle aggregate,degC day,Within-cycle sum of daily frost severity,Approximate exposure index
+CUMULATIVE_HEAT_SEVERITY_INDEX_DEGC_DAY,cycle aggregate,degC day,Within-cycle sum of daily heat severity,Approximate exposure index
