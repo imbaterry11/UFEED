@@ -559,7 +559,9 @@ UFEED_check_ee_ready <- function(
 #' @param lat Numeric latitude.
 #' @param start_year Integer start year.
 #' @param end_year Integer end year.
-#' @param weather_data_source Weather source. One of `"power"`, `"power_ee"`, or `"power_open_meteo"`.
+#' @param weather_data_source Weather source. One of `"power"`, `"power_ee"`, or
+#'   `"power_open_meteo"`. With `"power_ee"`, `WD2M` is derived from ERA5-Land
+#'   daily mean 10 m U/V wind components.
 #' @param soil_data_source Soil source. One of `"remote"` or `"local"`.
 #' @param soil_data_local_dir Local SoilGrids directory if `soil_data_source = "local"`.
 #' @param included_module Character vector of feature modules to compute.
@@ -673,7 +675,9 @@ UFEED_history <- function(
 #'
 #' @param lon Numeric longitude.
 #' @param lat Numeric latitude.
-#' @param weather_data_source Weather source. One of `"power"`, `"power_ee"`, or `"power_open_meteo"`.
+#' @param weather_data_source Weather source. One of `"power"`, `"power_ee"`, or
+#'   `"power_open_meteo"`. With `"power_ee"`, `WD2M` is derived from ERA5-Land
+#'   daily mean 10 m U/V wind components.
 #' @param soil_data_source Soil source. One of `"remote"` or `"local"`.
 #' @param soil_data_local_dir Local SoilGrids directory if `soil_data_source = "local"`.
 #' @param included_module Character vector of feature modules to compute.
@@ -771,7 +775,9 @@ UFEED_present <- function(
 #' @param lat Numeric latitude.
 #' @param start_year Integer start year.
 #' @param end_year Integer end year.
-#' @param weather_data_source Weather source. One of `"power"`, `"power_ee"`, or `"power_open_meteo"`.
+#' @param weather_data_source Weather source. One of `"power"`, `"power_ee"`, or
+#'   `"power_open_meteo"`. With `"power_ee"`, `WD2M` is derived from ERA5-Land
+#'   daily mean 10 m U/V wind components.
 #' @param parameters Character vector of weather variables to request. If `NULL`,
 #'   UFEED historical defaults are used.
 #' @param pairwise Logical. If `TRUE`, pair `lon[i]` with `lat[i]`. If `FALSE`,
@@ -850,7 +856,8 @@ UFEED_download_history_weather <- function(
 #' @param lon Numeric longitude.
 #' @param lat Numeric latitude.
 #' @param weather_data_source Weather source for the historical backbone. One of
-#'   `"power"`, `"power_ee"`, or `"power_open_meteo"`.
+#'   `"power"`, `"power_ee"`, or `"power_open_meteo"`. With `"power_ee"`,
+#'   `WD2M` is derived from ERA5-Land daily mean 10 m U/V wind components.
 #' @param parameters Character vector of weather variables to request. If `NULL`,
 #'   UFEED present defaults are used.
 #' @param pairwise Logical. If `TRUE`, pair `lon[i]` with `lat[i]`. If `FALSE`,
@@ -2595,6 +2602,11 @@ get_weather_data_power_ee <- function(
     "dewpoint_temperature_2m",
     "surface_pressure",
     "total_precipitation_sum",
+
+    # ERA5-Land 10 m wind components used to derive WD2M
+    "u_component_of_wind_10m",
+    "v_component_of_wind_10m",
+
     "soil_temperature_level_1", "soil_temperature_level_3",
     "volumetric_soil_water_layer_1",
     "volumetric_soil_water_layer_2",
@@ -2681,6 +2693,9 @@ get_weather_data_power_ee <- function(
         tsoil3_C <- img$select("soil_temperature_level_3")$subtract(273.15)
         prcp_mm <- img$select("total_precipitation_sum")$multiply(1000)
         ps_kPa <- img$select("surface_pressure")$divide(1000)
+        # ERA5-Land daily mean 10 m wind components
+        u10 <- img$select("u_component_of_wind_10m")
+        v10 <- img$select("v_component_of_wind_10m")
 
         sw1 <- img$select("volumetric_soil_water_layer_1")
         sw2 <- img$select("volumetric_soil_water_layer_2")
@@ -2691,11 +2706,13 @@ get_weather_data_power_ee <- function(
         pack <- ee$Image$cat(list(
           tmean_C, tmin_C, tmax_C, tdew_C,
           prcp_mm, ps_kPa,
+          u10, v10,
           tsoil1_C, tsoil3_C,
           sw1, gwetroot
         ))$rename(c(
           "T2M", "T2M_MIN", "T2M_MAX", "T2MDEW",
           "PRECTOTCORR", "PS",
+          "U10", "V10",
           "TSOIL1", "TSOIL3",
           "GWETTOP", "GWETROOT"
         ))
@@ -2708,6 +2725,34 @@ get_weather_data_power_ee <- function(
           scale = ee_scale
         )
 
+        # ------------------------------------------------------------
+        # ERA5-Land-derived daily wind direction
+        #
+        # U10 > 0 = wind vector toward east
+        # V10 > 0 = wind vector toward north
+        #
+        # Meteorological direction:
+        #   0   = from North
+        #   90  = from East
+        #   180 = from South
+        #   270 = from West
+        #
+        # Earth Engine atan2 uses:
+        #   x.atan2(y)
+        # rather than the more common atan2(y, x),
+        # so meteorological atan2(-u, -v) becomes:
+        #   (-v).atan2(-u)
+        # ------------------------------------------------------------
+
+        wd2m_era5 <- ee$Number(v$get("V10"))$
+          multiply(-1)$
+          atan2(
+            ee$Number(v$get("U10"))$multiply(-1)
+          )$
+          multiply(180 / pi)$
+          add(360)$
+          mod(360)
+
         ee$Feature(NULL, list(
           Date = ee$Date(img$get("system:time_start"))$format("YYYY-MM-dd"),
           T2M = v$get("T2M"),
@@ -2716,6 +2761,10 @@ get_weather_data_power_ee <- function(
           T2MDEW = v$get("T2MDEW"),
           PRECTOTCORR = v$get("PRECTOTCORR"),
           PS = v$get("PS"),
+
+          # ERA5-Land-derived wind direction
+          WD2M = wd2m_era5,
+
           TSOIL1 = v$get("TSOIL1"),
           TSOIL3 = v$get("TSOIL3"),
           GWETTOP = v$get("GWETTOP"),
@@ -2745,7 +2794,15 @@ get_weather_data_power_ee <- function(
     dplyr::distinct(Date, .keep_all = TRUE)
 
   replace_cols <- intersect(
-    c("T2M", "T2M_MIN", "T2M_MAX", "T2MDEW", "PRECTOTCORR", "PS", "TSOIL1", "TSOIL3", "GWETTOP", "GWETROOT"),
+    c(
+      "T2M", "T2M_MIN", "T2M_MAX", "T2MDEW",
+      "PRECTOTCORR", "PS",
+
+      # Replace POWER WD2M with ERA5-Land-derived direction
+      "WD2M",
+
+      "TSOIL1", "TSOIL3", "GWETTOP", "GWETROOT"
+    ),
     names(df_power)
   )
 

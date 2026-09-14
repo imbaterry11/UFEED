@@ -27,7 +27,8 @@ UFEED_download_present_weather(
 \item{lat}{Numeric latitude.}
 
 \item{weather_data_source}{Weather source for the historical backbone. One of
-\code{"power"}, \code{"power_ee"}, or \code{"power_open_meteo"}.}
+\code{"power"}, \code{"power_ee"}, or \code{"power_open_meteo"}. With \code{"power_ee"},
+\code{WD2M} is derived from ERA5-Land daily mean 10 m U/V wind components.}
 
 \item{parameters}{Character vector of weather variables to request. If \code{NULL},
 UFEED present defaults are used.}

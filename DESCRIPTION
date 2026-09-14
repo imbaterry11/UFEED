@@ -1,7 +1,7 @@
 Package: UFEED
 Type: Package
 Title: Universal Feature Extraction from Environmental Data (UFEED)
-Version: 0.1.1
+Version: 0.1.2
 Authors@R: 
     person("Hongrui", "Wang", email = "hongrui.wang@inrae.fr", role = c("aut", "cre"))
 Author: Hongrui Wang [aut, cre]
