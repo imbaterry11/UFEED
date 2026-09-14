@@ -14,12 +14,12 @@ Install the stable, paper-associated release from GitHub:
 
 ```r
 install.packages("remotes")
-remotes::install_github("imbaterry11/UFEED@v0.1.1", dependencies = TRUE)
+remotes::install_github("imbaterry11/UFEED@v0.1.2", dependencies = TRUE)
 library(UFEED)
 ```
 
 Users can also
-[download the v0.1.1 source archive](https://github.com/imbaterry11/UFEED/archive/refs/tags/v0.1.1.tar.gz).
+[download the v0.1.2 source archive](https://github.com/imbaterry11/UFEED/archive/refs/tags/v0.1.2.tar.gz).
 
 Workflows using Google Earth Engine through `weather_data_source = "power_ee"`
 also require a working [`rgee`](https://github.com/r-spatial/rgee)
@@ -87,7 +87,7 @@ forecast Open-Meteo data.
 |---|---|---|
 | `"power"` | Easiest option and suitable for most workflows. | None |
 | `"power_open_meteo"` | Higher-resolution weather without Earth Engine. | None for normal use, but free [API call limits](https://open-meteo.com/en/terms) apply |
-| `"power_ee"` | ERA5-Land data through Google Earth Engine. | `rgee`, Earth Engine authentication, and a cloud project |
+| `"power_ee"` | Selected ERA5-Land variables through Google Earth Engine; `WD2M` is derived from daily mean 10 m U/V wind components. | `rgee`, Earth Engine authentication, and a cloud project |
 
 Choose a source with the `weather_data_source` argument. See the
 [NASA POWER](https://power.larc.nasa.gov/),
@@ -190,14 +190,14 @@ temperature bases, and chilling-model settings.
 
 Use
 [`UFEED_feature_inventory.csv`](UFEED_feature_inventory.csv)
-as the reference dictionary for UFEED 0.1.1 output columns. It records each
+as the reference dictionary for UFEED 0.1.2 output columns. It records each
 core feature's definition, unit, required inputs, temporal direction,
 generating module, and relevant notes.
 
 ## Under development
 
 Atmospheric-demand and surface-energy/radiation expansion helpers are under
-development and are not included in UFEED 0.1.1.
+development and are not included in UFEED 0.1.2.
 
 ## License
 

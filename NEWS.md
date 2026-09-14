@@ -1,3 +1,14 @@
+# UFEED 0.1.2
+
+Patch release.
+
+## Changed
+
+- Updated the `power_ee` pathway so `WD2M` is derived from ERA5-Land daily
+  10 m U/V wind components instead of retaining the NASA POWER value.
+- Preserved the existing `WD2M` column name and meteorological convention
+  (0 degrees = North, 90 = East, 180 = South, and 270 = West).
+
 # UFEED 0.1.1
 
 Patch release.

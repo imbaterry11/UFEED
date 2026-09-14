@@ -43,6 +43,21 @@ manual_ewma <- function(x, window, reverse = FALSE) {
   out
 }
 
+test_that("ERA5-Land U/V components follow meteorological direction", {
+  wind_direction_from_uv <- function(u, v) {
+    (atan2(-u, -v) * 180 / pi + 360) %% 360
+  }
+
+  expect_equal(
+    wind_direction_from_uv(
+      u = c(0, -1, 0, 1),
+      v = c(-1, 0, 1, 0)
+    ),
+    c(0, 90, 180, 270),
+    tolerance = 1e-12
+  )
+})
+
 test_that("cumsum features are backward cumulative sums within season", {
   weather <- make_regression_weather(n = 10)
 
