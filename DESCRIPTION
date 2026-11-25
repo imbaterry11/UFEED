@@ -1,7 +1,7 @@
 Package: UFEED
 Type: Package
 Title: Universal Feature Extraction from Environmental Data (UFEED)
-Version: 0.1.2
+Version: 0.1.2.9000
 Authors@R: 
     person("Hongrui", "Wang", email = "hongrui.wang@inrae.fr", role = c("aut", "cre"))
 Author: Hongrui Wang [aut, cre]
@@ -9,6 +9,8 @@ Maintainer: Hongrui Wang <hongrui.wang@inrae.fr>
 Description: Downloads weather and soil data and computes environmental features for plant physiology modeling.
 License: MIT + file LICENSE
 Encoding: UTF-8
+SystemRequirements: APSIM Next Generation, DSSAT-CSM, and STICS are
+    optional external engines for their respective crop model simulations.
 LazyData: true
 Roxygen: list(markdown = TRUE)
 Depends:

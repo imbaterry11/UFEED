@@ -1,3 +1,15 @@
+# UFEED 0.1.2.9000 (development)
+
+- Added opt-in installation of R crop model tools and automatic engine detection.
+
+- Added optional atmospheric demand and reference canopy features.
+- Added precipitation and climate water balance summaries, a SoilGrids-derived
+  reference soil water balance, and an experimental APSIM weather adapter.
+- Added a common interface for collecting daily outputs from configured STICS,
+  DSSAT and APSIM runners.
+- Added support for CroptimizR-compatible wrappers and their named daily
+  simulation outputs.
+
 # UFEED 0.1.2
 
 Patch release.

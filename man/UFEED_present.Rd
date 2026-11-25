@@ -11,7 +11,8 @@ UFEED_present(
   soil_data_source = c("remote", "local"),
   soil_data_local_dir = "",
   included_module = c("cumsum_features", "EWMA_REWMA_features",
-    "cumulative_temp_features", "season_summary_features")
+    "cumulative_temp_features", "season_summary_features"),
+  crop_model = NULL
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ daily mean 10 m U/V wind components.}
 \item{soil_data_local_dir}{Local SoilGrids directory if \code{soil_data_source = "local"}.}
 
 \item{included_module}{Character vector of feature modules to compute.}
+
+\item{crop_model}{Optional configuration for the crop model module. See
+\code{\link[=UFEED_compute_weather_features]{UFEED_compute_weather_features()}}.}
 }
 \value{
 A data frame of UFEED present-season features.

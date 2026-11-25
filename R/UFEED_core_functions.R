@@ -77,7 +77,8 @@ UFEED_MODULES <- c(
   "cumsum_features",
   "EWMA_REWMA_features",
   "cumulative_temp_features",
-  "season_summary_features"
+  "season_summary_features",
+  "crop_model_features"
 )
 
 UFEED_EWMA_REWMA_WINDOWS <- c(2, 3, 4, 5, 6, 7, 10, 14, 21, 30, 45, 60, 90)
@@ -565,6 +566,8 @@ UFEED_check_ee_ready <- function(
 #' @param soil_data_source Soil source. One of `"remote"` or `"local"`.
 #' @param soil_data_local_dir Local SoilGrids directory if `soil_data_source = "local"`.
 #' @param included_module Character vector of feature modules to compute.
+#' @param crop_model Optional configuration for the crop model module. See
+#'   [UFEED_compute_weather_features()].
 #'
 #' @return A data frame of UFEED historical features.
 #' @export
@@ -581,7 +584,8 @@ UFEED_history <- function(
       "EWMA_REWMA_features",
       "cumulative_temp_features",
       "season_summary_features"
-    )
+    ),
+    crop_model = NULL
 ) {
   weather_data_source <- match.arg(weather_data_source)
   soil_data_source <- match.arg(soil_data_source)
@@ -615,6 +619,7 @@ UFEED_history <- function(
     weather_data = weather_data,
     feature_profile = "history",
     included_module = included_module,
+    crop_model = crop_model,
     cumsum_cols = UFEED_CUMSUM_COLS_HISTORY,
     ewma_rewma_cols = UFEED_EWMA_REWMA_COLS_HISTORY,
     ewma_rewma_windows = UFEED_EWMA_REWMA_WINDOWS,
@@ -661,6 +666,7 @@ UFEED_history <- function(
     dplyr::select(-UFEED_start_date, -UFEED_end_date, -dplyr::any_of(c("start_year", "end_year"))) |>
     dplyr::arrange(lon, lat, Date)
 
+  attr(out, "crop_model_status") <- attr(weather_features, "crop_model_status")
   message("Historical UFEED dataframe ready.")
   out
 }
@@ -681,6 +687,8 @@ UFEED_history <- function(
 #' @param soil_data_source Soil source. One of `"remote"` or `"local"`.
 #' @param soil_data_local_dir Local SoilGrids directory if `soil_data_source = "local"`.
 #' @param included_module Character vector of feature modules to compute.
+#' @param crop_model Optional configuration for the crop model module. See
+#'   [UFEED_compute_weather_features()].
 #'
 #' @return A data frame of UFEED present-season features.
 #' @export
@@ -695,7 +703,8 @@ UFEED_present <- function(
       "EWMA_REWMA_features",
       "cumulative_temp_features",
       "season_summary_features"
-    )
+    ),
+    crop_model = NULL
 ) {
   weather_data_source <- match.arg(weather_data_source)
   soil_data_source <- match.arg(soil_data_source)
@@ -722,6 +731,7 @@ UFEED_present <- function(
     weather_data = weather_data,
     feature_profile = "present",
     included_module = included_module,
+    crop_model = crop_model,
     cumsum_cols = UFEED_CUMSUM_COLS_PRESENT,
     ewma_rewma_cols = UFEED_EWMA_REWMA_COLS_PRESENT,
     ewma_rewma_windows = UFEED_EWMA_REWMA_WINDOWS,
@@ -754,6 +764,7 @@ UFEED_present <- function(
     dplyr::select(-dplyr::any_of(c("start_year", "end_year"))) |>
     dplyr::arrange(lon, lat, Date)
 
+  attr(out, "crop_model_status") <- attr(weather_features, "crop_model_status")
   message("Present UFEED dataframe ready.")
   out
 }
@@ -973,8 +984,9 @@ UFEED_download_present_weather <- function(
 #'   `UFEED_download_present_weather()` when you want to be explicit.
 #' @param included_module Character vector of feature modules to compute. Valid
 #'   values are `"cumsum_features"`, `"EWMA_REWMA_features"`,
-#'   `"cumulative_temp_features"`, and `"season_summary_features"`.
-#'   The default computes all four modules. Users may provide any subset of
+#'   `"cumulative_temp_features"`, `"season_summary_features"`, and
+#'   `"crop_model_features"`.
+#'   The default computes the first four modules. Users may provide any subset of
 #'   these module names. Any other value causes an error.
 #' @param cumsum_cols Character vector or `"default"`. Columns used for
 #'   cumulative-sum features. With `"default"`, the valid column set depends on
@@ -1063,6 +1075,12 @@ UFEED_download_present_weather <- function(
 #' @param end_filter_date Optional date. Rows after this date are removed after
 #'   feature computation.
 #' @param message_progress Logical. Print progress messages.
+#' @param crop_model Optional engine configuration for `"crop_model_features"`.
+#'   With `NULL`, the module computes reference processes from UFEED weather.
+#'   To also run external engines, supply
+#'   `crop` and model configurations in `croptimizr` or `runners`.
+#'   Optional `soil` is passed to direct runners. Engine outcomes are recorded
+#'   in the result's `crop_model_status` attribute.
 #'
 #' @return A data frame containing `Date`, `lon`, `lat`, and computed weather
 #'   features. Raw weather columns are not repeated; use `UFEED_wrap_up()` to
@@ -1111,7 +1129,8 @@ UFEED_compute_weather_features <- function(
     season_min_cols = "default",
     start_filter_date = NULL,
     end_filter_date = NULL,
-    message_progress = TRUE
+    message_progress = TRUE,
+    crop_model = NULL
 ) {
   UFEED_check_required_packages(c("dplyr"))
 
@@ -1319,6 +1338,24 @@ UFEED_compute_weather_features <- function(
     }
   }
 
+  model_status <- NULL
+  if ("crop_model_features" %in% included_module) {
+    reference <- .ufeed_reference_crop_processes(weather_data)
+    feature_df <- UFEED_safe_left_join_features(feature_df, reference)
+    if (!is.null(crop_model)) {
+      if (!is.list(crop_model) || is.null(crop_model$crop) ||
+          !length(c(crop_model$runners, crop_model$croptimizr))) {
+        stop("The crop_model configuration requires a crop and at least one model configuration.", call. = FALSE)
+      }
+      models <- .UFEED_compute_crop_model_features(
+        weather = weather_data, soil = crop_model$soil, crop = crop_model$crop,
+        runners = crop_model$runners, croptimizr = crop_model$croptimizr
+      )
+      feature_df <- UFEED_safe_left_join_features(feature_df, models$features)
+      model_status <- models$status
+    }
+  }
+
   if (!is.null(start_filter_date)) {
     feature_df <- feature_df |>
       dplyr::filter(Date >= as.Date(start_filter_date))
@@ -1329,9 +1366,11 @@ UFEED_compute_weather_features <- function(
       dplyr::filter(Date <= as.Date(end_filter_date))
   }
 
-  feature_df |>
+  out <- feature_df |>
     UFEED_remove_duplicate_columns() |>
     dplyr::arrange(lon, lat, Date)
+  attr(out, "crop_model_status") <- model_status
+  out
 }
 
 #' Get UFEED soil features

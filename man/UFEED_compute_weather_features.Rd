@@ -27,7 +27,8 @@ UFEED_compute_weather_features(
   season_min_cols = "default",
   start_filter_date = NULL,
   end_filter_date = NULL,
-  message_progress = TRUE
+  message_progress = TRUE,
+  crop_model = NULL
 )
 }
 \arguments{
@@ -41,8 +42,9 @@ from \code{UFEED_download_history_weather()} and \code{"present"} for data from
 
 \item{included_module}{Character vector of feature modules to compute. Valid
 values are \code{"cumsum_features"}, \code{"EWMA_REWMA_features"},
-\code{"cumulative_temp_features"}, and \code{"season_summary_features"}.
-The default computes all four modules. Users may provide any subset of
+\code{"cumulative_temp_features"}, \code{"season_summary_features"}, and
+\code{"crop_model_features"}.
+The default computes the first four modules. Users may provide any subset of
 these module names. Any other value causes an error.}
 
 \item{cumsum_cols}{Character vector or \code{"default"}. Columns used for
@@ -150,6 +152,13 @@ feature computation.}
 feature computation.}
 
 \item{message_progress}{Logical. Print progress messages.}
+
+\item{crop_model}{Optional engine configuration for \code{"crop_model_features"}.
+With \code{NULL}, the module computes reference processes from UFEED weather.
+To also run external engines, supply
+\code{crop} and model configurations in \code{croptimizr} or \code{runners}.
+Optional \code{soil} is passed to direct runners. Engine outcomes are recorded
+in the result's \code{crop_model_status} attribute.}
 }
 \value{
 A data frame containing \code{Date}, \code{lon}, \code{lat}, and computed weather
