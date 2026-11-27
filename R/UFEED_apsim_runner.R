@@ -1,5 +1,6 @@
 UFEED_apsim_runner <- function(executable, template, crop_name, report = "Report",
-                              radiation_to_mj = 1, climate_normals = NULL) {
+                              radiation_to_mj = 1, climate_normals = NULL,
+                              report_variables = character()) {
   if (!file.exists(executable) || !file.exists(template) ||
       !grepl("^[A-Za-z0-9_]+$", report) || length(radiation_to_mj) != 1L ||
       !is.finite(radiation_to_mj) || radiation_to_mj <= 0) {
@@ -7,6 +8,8 @@ UFEED_apsim_runner <- function(executable, template, crop_name, report = "Report
   }
   executable <- normalizePath(executable, winslash = "/")
   template <- normalizePath(template, winslash = "/")
+  if (!is.character(report_variables) || anyNA(report_variables) ||
+      any(!nzchar(report_variables))) stop("APSIM report variables must be nonempty strings.")
   if (!is.null(climate_normals) && (!is.function(climate_normals))) {
     stop("Climate normals must be a function of lon and lat returning named tav and amp.", call. = FALSE)
   }
@@ -57,7 +60,8 @@ UFEED_apsim_runner <- function(executable, template, crop_name, report = "Report
           count["clock"] <<- count["clock"] + 1L
         }
         if (identical(kind, "Models.Report") && identical(node$Name, report)) {
-          node$VariableNames <- as.list(unique(c("[Clock].Today", unlist(node$VariableNames))))
+          node$VariableNames <- as.list(unique(c("[Clock].Today", unlist(node$VariableNames),
+                                                report_variables)))
           node$EventNames <- list("[Clock].EndOfDay")
           count["report"] <<- count["report"] + 1L
         }

@@ -112,3 +112,20 @@ test_that("opt-in setup reports explicit engine paths and missing engines", {
   expect_identical(checks$engines$executable[1], normalizePath(engine, winslash = "/"))
   expect_true(all(startsWith(checks$engines$download, "https://")))
 })
+test_that("daily counter increments do not bridge gaps or reset boundaries", {
+  dates <- as.Date("2011-01-01") + c(0, 1, 3, 4, 5)
+  expect_equal(ufeed_daily_counter_increment(c(0, 2, 4, 0, 3), dates),
+               c(NA, 2, NA, NA, 3))
+})
+
+test_that("the main entry point joins crop processes by site and date", {
+  dates <- as.Date("2011-04-01") + 0:2
+  w <- data.frame(Date = dates, lon = 1, lat = 2, PRECTOTCORR = 0)
+  runner <- function(weather, soil, crop) {
+    data.frame(weather[2:3, c("Date", "lon", "lat")], transpiration_mm_day = c(0L, 2L))
+  }
+  out <- UFEED(weather = w, modules = "derived", progress = FALSE,
+    crop_model = list(crop = "wheat", runners = list(apsim = runner)))
+  expect_equal(out$apsim_transpiration_mm_day, c(NA, 0, 2))
+  expect_equal(attr(out, "crop_model_status")$status[3], "completed")
+})

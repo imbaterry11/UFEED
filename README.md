@@ -14,12 +14,75 @@ Install the stable, paper-associated release from GitHub:
 
 ```r
 install.packages("remotes")
-remotes::install_github("imbaterry11/UFEED@v0.1.2", dependencies = TRUE)
+remotes::install_github("imbaterry11/UFEED@v0.1.0", dependencies = TRUE)
 library(UFEED)
 ```
 
 Users can also
-[download the v0.1.2 source archive](https://github.com/imbaterry11/UFEED/archive/refs/tags/v0.1.2.tar.gz).
+[download the v0.1.0 source archive](https://github.com/imbaterry11/UFEED/archive/refs/tags/v0.1.0.tar.gz).
+
+### One entry point (development build)
+
+```r
+# Supply data without downloading anything
+features <- UFEED(weather = my_weather)
+
+# Download soil only, without requesting weather
+soil <- UFEED(lon = -0.58, lat = 44.84, modules = "soil")
+
+# Keep supplied measurements; fill missing dates and NA from NASA POWER
+features <- UFEED(weather = my_weather, lon = -0.58, lat = 44.84,
+                  fill_missing = TRUE, weather_data_source = "power")
+attr(features, "weather_fill")
+attr(features, "weather_coverage")
+```
+
+Supply canonical UFEED field names and units (for example `Date` and
+`PRECTOTCORR` in mm/day), using UTC day boundaries if combining with
+downloads. New runs use `forecast_days = 0` by default; request future
+weather explicitly. `weather_data_source = "open_meteo"` selects ERA5
+historical weather. Set `OPEN_METEO_API_KEY` in your local `.Renviron` for
+the corresponding paid endpoint; never put the key in project code. The
+[paid historical endpoint requires Professional or higher](https://open-meteo.com/en/pricing).
+Use `modules = "weather"` for weather without soil downloads, or
+`modules = "soil"` for a soil-only site table. With supplied weather,
+UFEED does not download soil unless a soil source is explicitly selected.
+
+Progress counts completed weather requests separately from coverage and
+the estimated weighted Open-Meteo calls. Estimates are not account usage.
+[NASA POWER](https://power.larc.nasa.gov/docs/services/api/temporal/daily/)
+allows 20 parameters per daily point request.
+[NASA ORNL DAAC TESViS](https://modis.ornl.gov/data/modis_webservice.html)
+allows 10 composite dates per synchronous subset request. Selecting the
+satellite module does not add parameters to a POWER request.
+
+### Optional NASA satellite features (development build)
+
+```r
+features <- UFEED(lon = -0.58, lat = 44.84, start_date = "2010-05-01",
+                  end_date = "2011-09-01",
+                  modules = c("weather", "soil", "derived", "satellite"))
+
+# For a single canopy snapshot instead of a daily series:
+canopy <- UFEED::UFEED_satellite(lat = 44.84, lon = -0.58)
+```
+
+The coordinates above are an example, not a geographic restriction.
+This separate module requests MODIS LAI/FPAR and NDVI/EVI from NASA ORNL DAAC
+without Earth Engine. It returns the latest quality-screened composite for
+each feature, with its age and quality code, and caches the raw point data.
+Prediction-ready requests use only data known by the issue date. For a past
+date, a cache populated later cannot prove availability; use
+`prediction_ready = FALSE` for retrospective backfill, not as proof that
+those values could have been used in a historical forecast. The main
+`UFEED()` satellite module aligns the most recent valid composites to the
+daily rows and includes finalized MODIS ET only for retrospective runs.
+When a point has no usable composite, `UFEED()` searches a square extending
+3 km each way and uses the median of quality-screened pixels. Set
+`satellite_half_width_km = 0` to disable it. The output identifies point,
+neighborhood median, or unavailable, and reports the contributing pixel
+count and window size. A neighborhood value is not a field measurement;
+locations without valid pixels still return `NA`.
 
 ### Optional crop model setup (development build)
 
@@ -210,6 +273,9 @@ See the function documentation for advanced column selection, window lengths,
 temperature bases, and chilling-model settings.
 
 ## Feature inventory
+
+See the [feature description guide](FEATURES.md) for units, naming patterns,
+availability rules, and the separate atmospheric and canopy dictionaries.
 
 Use
 [`UFEED_feature_inventory.csv`](UFEED_feature_inventory.csv)
